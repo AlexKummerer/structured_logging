@@ -1,0 +1,24 @@
+# Core Python libraries - all part of standard library, no external dependencies needed
+# This library uses only Python standard library modules:
+# - json (JSON encoding/decoding)
+# - logging (Python logging framework)
+# - sys (System-specific parameters)
+# - os (Operating system interface)
+# - uuid (UUID generation)
+# - datetime (Date and time handling)
+# - dataclasses (Data classes)
+# - typing (Type hints)
+# - contextlib (Context management utilities)
+# - contextvars (Context variables)
+# - collections.abc (Abstract base classes)
+
+# Development dependencies (optional)
+# Uncomment if you want to install development tools:
+# pytest>=7.0,<9.0
+# pytest-cov>=3.0,<5.0
+# black>=22.0,<25.0
+# ruff>=0.1.0,<1.0.0
+# mypy>=1.0.0,<2.0.0
+# bump2version>=1.0.0,<2.0.0
+
+# NOTE: This library requires Python 3.13+ for modern features and optimal performance
