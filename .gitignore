@@ -108,6 +108,12 @@ dmypy.json
 # Pyre type checker
 .pyre/
 
+# Ruff cache
+.ruff_cache/
+
+# Other linting caches
+.pylint.d/
+
 # IDE specific files
 .vscode/
 .idea/
