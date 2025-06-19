@@ -92,6 +92,10 @@ from .serializers import (
     SmartConverter,
     TypeDetector,
     TypeRegistry,
+    ValidationError,
+    SchemaValidator,
+    TypeAnnotationExtractor,
+    StructuredDataValidator,
     create_lazy_serializable,
     enhanced_json_dumps,
     get_lazy_serialization_stats,
@@ -100,6 +104,11 @@ from .serializers import (
     serialize_for_logging,
     serialize_for_logging_lazy_aware,
     should_use_lazy_serialization,
+    register_validation_schema,
+    validate_log_data,
+    auto_validate_function,
+    get_validation_stats,
+    reset_validation_stats,
 )
 
 __all__ = [
@@ -167,6 +176,16 @@ __all__ = [
     "should_use_lazy_serialization",
     "get_lazy_serialization_stats",
     "reset_lazy_serialization_stats",
+    # Schema validation
+    "ValidationError",
+    "SchemaValidator",
+    "TypeAnnotationExtractor",
+    "StructuredDataValidator",
+    "register_validation_schema",
+    "validate_log_data",
+    "auto_validate_function",
+    "get_validation_stats",
+    "reset_validation_stats",
     # Async API
     "AsyncLoggerConfig",
     "get_default_async_config",

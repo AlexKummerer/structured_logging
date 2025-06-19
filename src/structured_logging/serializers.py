@@ -12,10 +12,11 @@ from datetime import date, datetime, time, timedelta
 from decimal import Decimal
 from enum import Enum
 from pathlib import Path, PurePath
-from typing import Any, Callable, Dict, List, Optional, Set, Type, Union
+from typing import Any, Callable, Dict, List, Optional, Set, Type, Union, get_type_hints, get_origin, get_args
 from uuid import UUID
 import re
 import inspect
+import sys
 
 # Optional imports for scientific libraries
 try:
@@ -1261,3 +1262,541 @@ def serialize_for_logging(obj: Any, config: Optional[SerializationConfig] = None
         "__unserializable__": type(obj).__name__,
         "__repr__": obj_repr
     }
+
+
+# Schema validation and type annotation support
+
+class ValidationError(Exception):
+    """Exception raised when schema validation fails"""
+    pass
+
+
+class SchemaValidator:
+    """
+    Runtime schema validation for structured logging data
+    
+    Provides comprehensive validation of log data against predefined schemas
+    with support for complex nested structures and type constraints.
+    """
+    
+    def __init__(self, config: Optional[SerializationConfig] = None):
+        self.config = config or DEFAULT_CONFIG
+        self._schemas = {}
+        self._validation_stats = {
+            'validations_performed': 0,
+            'validation_failures': 0,
+            'validation_time': 0.0
+        }
+    
+    def register_schema(self, name: str, schema: Dict[str, Any]) -> None:
+        """
+        Register a validation schema
+        
+        Args:
+            name: Schema name/identifier
+            schema: Schema definition dictionary
+        """
+        self._schemas[name] = self._compile_schema(schema)
+    
+    def _compile_schema(self, schema: Dict[str, Any]) -> Dict[str, Any]:
+        """Compile and optimize schema for faster validation"""
+        compiled = {}
+        
+        for field, constraints in schema.items():
+            if isinstance(constraints, str):
+                # Simple type constraint: {"field": "str"}
+                compiled[field] = {"type": constraints, "required": True}
+            elif isinstance(constraints, dict):
+                # Complex constraint: {"field": {"type": "str", "max_length": 100}}
+                compiled[field] = constraints.copy()
+                if "required" not in compiled[field]:
+                    compiled[field]["required"] = True
+            elif isinstance(constraints, type):
+                # Python type: {"field": str}
+                compiled[field] = {"type": constraints.__name__, "required": True}
+            else:
+                compiled[field] = {"type": "any", "required": True}
+        
+        return compiled
+    
+    def validate(self, data: Dict[str, Any], schema_name: str) -> bool:
+        """
+        Validate data against a registered schema
+        
+        Args:
+            data: Data to validate
+            schema_name: Name of schema to validate against
+            
+        Returns:
+            True if validation passes
+            
+        Raises:
+            ValidationError: If validation fails
+        """
+        import time
+        start_time = time.perf_counter()
+        
+        try:
+            self._validation_stats['validations_performed'] += 1
+            
+            if schema_name not in self._schemas:
+                raise ValidationError(f"Schema '{schema_name}' not found")
+            
+            schema = self._schemas[schema_name]
+            errors = []
+            
+            # Check required fields
+            for field, constraints in schema.items():
+                if constraints.get("required", True) and field not in data:
+                    errors.append(f"Required field '{field}' is missing")
+                    continue
+                
+                if field in data:
+                    field_errors = self._validate_field(field, data[field], constraints)
+                    errors.extend(field_errors)
+            
+            # Check for unexpected fields if strict mode
+            if schema.get("strict", False):
+                for field in data:
+                    if field not in schema:
+                        errors.append(f"Unexpected field '{field}' not allowed in strict mode")
+            
+            if errors:
+                self._validation_stats['validation_failures'] += 1
+                raise ValidationError(f"Validation failed: {'; '.join(errors)}")
+            
+            return True
+            
+        finally:
+            self._validation_stats['validation_time'] += time.perf_counter() - start_time
+    
+    def _validate_field(self, field_name: str, value: Any, constraints: Dict[str, Any]) -> List[str]:
+        """Validate a single field value against constraints"""
+        errors = []
+        
+        # Type validation
+        expected_type = constraints.get("type")
+        if expected_type and expected_type != "any":
+            if not self._check_type(value, expected_type):
+                errors.append(f"Field '{field_name}' must be of type {expected_type}, got {type(value).__name__}")
+                return errors  # Skip other validations if type is wrong
+        
+        # String constraints
+        if isinstance(value, str):
+            if "min_length" in constraints and len(value) < constraints["min_length"]:
+                errors.append(f"Field '{field_name}' must be at least {constraints['min_length']} characters")
+            
+            if "max_length" in constraints and len(value) > constraints["max_length"]:
+                errors.append(f"Field '{field_name}' must be at most {constraints['max_length']} characters")
+            
+            if "pattern" in constraints:
+                import re
+                if not re.match(constraints["pattern"], value):
+                    errors.append(f"Field '{field_name}' does not match required pattern")
+        
+        # Numeric constraints
+        if isinstance(value, (int, float)):
+            if "min_value" in constraints and value < constraints["min_value"]:
+                errors.append(f"Field '{field_name}' must be at least {constraints['min_value']}")
+            
+            if "max_value" in constraints and value > constraints["max_value"]:
+                errors.append(f"Field '{field_name}' must be at most {constraints['max_value']}")
+        
+        # Collection constraints
+        if isinstance(value, (list, tuple, dict)):
+            if "min_items" in constraints and len(value) < constraints["min_items"]:
+                errors.append(f"Field '{field_name}' must have at least {constraints['min_items']} items")
+            
+            if "max_items" in constraints and len(value) > constraints["max_items"]:
+                errors.append(f"Field '{field_name}' must have at most {constraints['max_items']} items")
+        
+        # Enum/choice validation
+        if "choices" in constraints:
+            if value not in constraints["choices"]:
+                errors.append(f"Field '{field_name}' must be one of {constraints['choices']}")
+        
+        # Custom validator function
+        if "validator" in constraints:
+            validator_func = constraints["validator"]
+            try:
+                if not validator_func(value):
+                    errors.append(f"Field '{field_name}' failed custom validation")
+            except Exception as e:
+                errors.append(f"Field '{field_name}' validation error: {str(e)}")
+        
+        return errors
+    
+    def _check_type(self, value: Any, expected_type: str) -> bool:
+        """Check if value matches expected type"""
+        type_mapping = {
+            "str": str,
+            "int": int,
+            "float": (int, float),  # int is also acceptable for float
+            "bool": bool,
+            "list": list,
+            "dict": dict,
+            "tuple": tuple,
+            "set": set,
+            "datetime": datetime,
+            "uuid": UUID,
+            "decimal": Decimal,
+            "path": (str, Path, PurePath),
+            "any": object
+        }
+        
+        expected_types = type_mapping.get(expected_type, str)
+        return isinstance(value, expected_types)
+    
+    def get_validation_stats(self) -> Dict[str, Any]:
+        """Get validation statistics"""
+        return self._validation_stats.copy()
+    
+    def reset_validation_stats(self) -> None:
+        """Reset validation statistics"""
+        self._validation_stats = {
+            'validations_performed': 0,
+            'validation_failures': 0,
+            'validation_time': 0.0
+        }
+
+
+class TypeAnnotationExtractor:
+    """
+    Extract and validate type annotations from functions and classes
+    
+    Provides introspection capabilities for automatic schema generation
+    from Python type hints.
+    """
+    
+    def __init__(self):
+        self._annotation_cache = {}
+        self._cache_enabled = True
+    
+    def extract_function_schema(self, func: Callable) -> Dict[str, Any]:
+        """
+        Extract schema from function type annotations
+        
+        Args:
+            func: Function to analyze
+            
+        Returns:
+            Schema dictionary based on function parameters and return type
+        """
+        if self._cache_enabled and func in self._annotation_cache:
+            return self._annotation_cache[func]
+        
+        try:
+            type_hints = get_type_hints(func)
+            sig = inspect.signature(func)
+            
+            schema = {
+                "function_name": func.__name__,
+                "parameters": {},
+                "return_type": None
+            }
+            
+            # Extract parameter types
+            for param_name, param in sig.parameters.items():
+                if param_name in type_hints:
+                    param_schema = self._annotation_to_schema(type_hints[param_name])
+                    param_schema["required"] = param.default == inspect.Parameter.empty
+                    schema["parameters"][param_name] = param_schema
+            
+            # Extract return type
+            if "return" in type_hints:
+                schema["return_type"] = self._annotation_to_schema(type_hints["return"])
+            
+            if self._cache_enabled:
+                self._annotation_cache[func] = schema
+            
+            return schema
+            
+        except Exception as e:
+            return {"error": f"Failed to extract schema: {str(e)}"}
+    
+    def extract_class_schema(self, cls: Type) -> Dict[str, Any]:
+        """
+        Extract schema from class type annotations
+        
+        Args:
+            cls: Class to analyze
+            
+        Returns:
+            Schema dictionary based on class attributes and methods
+        """
+        try:
+            type_hints = get_type_hints(cls)
+            
+            schema = {
+                "class_name": cls.__name__,
+                "attributes": {},
+                "methods": {}
+            }
+            
+            # Extract attribute types
+            for attr_name, attr_type in type_hints.items():
+                schema["attributes"][attr_name] = self._annotation_to_schema(attr_type)
+            
+            # Extract method schemas
+            for method_name in dir(cls):
+                if not method_name.startswith('_'):
+                    method = getattr(cls, method_name)
+                    if callable(method):
+                        schema["methods"][method_name] = self.extract_function_schema(method)
+            
+            return schema
+            
+        except Exception as e:
+            return {"error": f"Failed to extract class schema: {str(e)}"}
+    
+    def _annotation_to_schema(self, annotation: Type) -> Dict[str, Any]:
+        """Convert type annotation to schema constraint"""
+        # Handle basic types
+        if annotation in (str, int, float, bool, list, dict, tuple, set):
+            return {"type": annotation.__name__}
+        
+        # Handle special types
+        if annotation == datetime:
+            return {"type": "datetime"}
+        elif annotation == UUID:
+            return {"type": "uuid"}
+        elif annotation == Decimal:
+            return {"type": "decimal"}
+        elif annotation in (Path, PurePath):
+            return {"type": "path"}
+        
+        # Handle generic types (List[str], Dict[str, int], etc.)
+        origin = get_origin(annotation)
+        args = get_args(annotation)
+        
+        if origin is list:
+            schema = {"type": "list"}
+            if args:
+                schema["item_type"] = self._annotation_to_schema(args[0])
+            return schema
+        
+        elif origin is dict:
+            schema = {"type": "dict"}
+            if len(args) >= 2:
+                schema["key_type"] = self._annotation_to_schema(args[0])
+                schema["value_type"] = self._annotation_to_schema(args[1])
+            return schema
+        
+        elif origin is tuple:
+            schema = {"type": "tuple"}
+            if args:
+                schema["item_types"] = [self._annotation_to_schema(arg) for arg in args]
+            return schema
+        
+        elif origin is Union:
+            # Handle Optional[T] and Union types
+            if len(args) == 2 and type(None) in args:
+                # Optional type
+                non_none_type = args[0] if args[1] is type(None) else args[1]
+                schema = self._annotation_to_schema(non_none_type)
+                schema["required"] = False
+                return schema
+            else:
+                # True union
+                return {
+                    "type": "union",
+                    "types": [self._annotation_to_schema(arg) for arg in args]
+                }
+        
+        # Fallback for unknown types
+        return {
+            "type": "custom",
+            "type_name": getattr(annotation, '__name__', str(annotation))
+        }
+
+
+class StructuredDataValidator:
+    """
+    High-level validator that combines schema validation with type annotations
+    
+    Provides a unified interface for validating structured logging data
+    against both explicit schemas and inferred type annotations.
+    """
+    
+    def __init__(self, config: Optional[SerializationConfig] = None):
+        self.config = config or DEFAULT_CONFIG
+        self.schema_validator = SchemaValidator(config)
+        self.type_extractor = TypeAnnotationExtractor()
+        self._auto_schemas = {}
+    
+    def register_schema(self, name: str, schema: Dict[str, Any]) -> None:
+        """Register an explicit validation schema"""
+        self.schema_validator.register_schema(name, schema)
+    
+    def register_function_schema(self, func: Callable, schema_name: Optional[str] = None) -> str:
+        """
+        Register a schema automatically generated from function type annotations
+        
+        Args:
+            func: Function to analyze
+            schema_name: Optional custom name, defaults to function name
+            
+        Returns:
+            Name of the registered schema
+        """
+        schema_name = schema_name or f"func_{func.__name__}"
+        extracted = self.type_extractor.extract_function_schema(func)
+        
+        # Convert function schema to validation schema
+        validation_schema = {}
+        for param_name, param_info in extracted.get("parameters", {}).items():
+            validation_schema[param_name] = param_info
+        
+        self.schema_validator.register_schema(schema_name, validation_schema)
+        self._auto_schemas[schema_name] = extracted
+        
+        return schema_name
+    
+    def register_class_schema(self, cls: Type, schema_name: Optional[str] = None) -> str:
+        """
+        Register a schema automatically generated from class type annotations
+        
+        Args:
+            cls: Class to analyze
+            schema_name: Optional custom name, defaults to class name
+            
+        Returns:
+            Name of the registered schema
+        """
+        schema_name = schema_name or f"class_{cls.__name__}"
+        extracted = self.type_extractor.extract_class_schema(cls)
+        
+        # Convert class schema to validation schema
+        validation_schema = {}
+        for attr_name, attr_info in extracted.get("attributes", {}).items():
+            validation_schema[attr_name] = attr_info
+        
+        self.schema_validator.register_schema(schema_name, validation_schema)
+        self._auto_schemas[schema_name] = extracted
+        
+        return schema_name
+    
+    def validate_against_function(self, func: Callable, data: Dict[str, Any]) -> bool:
+        """
+        Validate data against function signature
+        
+        Args:
+            func: Function whose signature to validate against
+            data: Data to validate
+            
+        Returns:
+            True if validation passes
+        """
+        schema_name = self.register_function_schema(func)
+        return self.schema_validator.validate(data, schema_name)
+    
+    def validate_against_class(self, cls: Type, data: Dict[str, Any]) -> bool:
+        """
+        Validate data against class attributes
+        
+        Args:
+            cls: Class whose attributes to validate against
+            data: Data to validate
+            
+        Returns:
+            True if validation passes
+        """
+        schema_name = self.register_class_schema(cls)
+        return self.schema_validator.validate(data, schema_name)
+    
+    def validate(self, data: Dict[str, Any], schema_name: str) -> bool:
+        """Validate data against named schema"""
+        return self.schema_validator.validate(data, schema_name)
+    
+    def get_schema_info(self, schema_name: str) -> Dict[str, Any]:
+        """Get information about a registered schema"""
+        if schema_name in self._auto_schemas:
+            return self._auto_schemas[schema_name]
+        elif schema_name in self.schema_validator._schemas:
+            return {
+                "schema_name": schema_name,
+                "type": "explicit",
+                "constraints": self.schema_validator._schemas[schema_name]
+            }
+        else:
+            return {"error": f"Schema '{schema_name}' not found"}
+    
+    def list_schemas(self) -> List[str]:
+        """List all registered schema names"""
+        explicit = list(self.schema_validator._schemas.keys())
+        auto = list(self._auto_schemas.keys())
+        return sorted(set(explicit + auto))
+    
+    def get_validation_stats(self) -> Dict[str, Any]:
+        """Get comprehensive validation statistics"""
+        return self.schema_validator.get_validation_stats()
+
+
+# Global validator instance
+_global_validator = StructuredDataValidator()
+
+
+def register_validation_schema(name: str, schema: Dict[str, Any]) -> None:
+    """
+    Register a validation schema globally
+    
+    Args:
+        name: Schema name
+        schema: Schema definition
+    """
+    _global_validator.register_schema(name, schema)
+
+
+def validate_log_data(data: Dict[str, Any], schema_name: str) -> bool:
+    """
+    Validate log data against a registered schema
+    
+    Args:
+        data: Data to validate
+        schema_name: Name of schema to validate against
+        
+    Returns:
+        True if validation passes
+        
+    Raises:
+        ValidationError: If validation fails
+    """
+    return _global_validator.validate(data, schema_name)
+
+
+def auto_validate_function(func: Callable) -> Callable:
+    """
+    Decorator to automatically validate function arguments
+    
+    Args:
+        func: Function to decorate
+        
+    Returns:
+        Decorated function that validates arguments
+    """
+    schema_name = _global_validator.register_function_schema(func)
+    
+    def wrapper(*args, **kwargs):
+        # Convert args to kwargs for validation
+        sig = inspect.signature(func)
+        bound = sig.bind(*args, **kwargs)
+        bound.apply_defaults()
+        
+        # Validate arguments
+        _global_validator.validate(dict(bound.arguments), schema_name)
+        
+        return func(*args, **kwargs)
+    
+    wrapper.__name__ = func.__name__
+    wrapper.__doc__ = func.__doc__
+    return wrapper
+
+
+def get_validation_stats() -> Dict[str, Any]:
+    """Get global validation statistics"""
+    return _global_validator.get_validation_stats()
+
+
+def reset_validation_stats() -> None:
+    """Reset global validation statistics"""
+    _global_validator.schema_validator.reset_validation_stats()

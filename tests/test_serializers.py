@@ -8,6 +8,7 @@ from datetime import date, datetime, time, timedelta
 from decimal import Decimal
 from enum import Enum
 from pathlib import Path
+from typing import Optional
 from uuid import UUID, uuid4
 
 import pytest
@@ -22,14 +23,23 @@ from structured_logging.serializers import (
     SmartConverter,
     TypeDetector,
     TypeRegistry,
+    ValidationError,
+    SchemaValidator,
+    TypeAnnotationExtractor,
+    StructuredDataValidator,
+    auto_validate_function,
     create_lazy_serializable,
     enhanced_json_dumps,
     get_lazy_serialization_stats,
+    get_validation_stats,
     register_custom_serializer,
+    register_validation_schema,
     reset_lazy_serialization_stats,
+    reset_validation_stats,
     serialize_for_logging,
     serialize_for_logging_lazy_aware,
     should_use_lazy_serialization,
+    validate_log_data,
 )
 
 
@@ -1475,3 +1485,606 @@ class TestLazySerializationEdgeCases:
         assert "bad" in result
         # Bad item should have error representation
         assert isinstance(result["bad"], dict)
+
+
+# Schema validation tests
+
+class TestSchemaValidator:
+    """Tests for SchemaValidator class"""
+    
+    def test_schema_validator_creation(self):
+        """Test creating schema validator"""
+        validator = SchemaValidator()
+        assert validator is not None
+        assert validator.config is not None
+    
+    def test_simple_schema_registration(self):
+        """Test registering simple schemas"""
+        validator = SchemaValidator()
+        
+        # Simple string schema
+        schema = {
+            "name": "str",
+            "age": "int",
+            "active": "bool"
+        }
+        
+        validator.register_schema("user", schema)
+        
+        # Valid data
+        valid_data = {"name": "John", "age": 30, "active": True}
+        assert validator.validate(valid_data, "user")
+        
+        # Invalid data - wrong type
+        invalid_data = {"name": "John", "age": "thirty", "active": True}
+        with pytest.raises(ValidationError):
+            validator.validate(invalid_data, "user")
+    
+    def test_complex_schema_constraints(self):
+        """Test complex schema with constraints"""
+        validator = SchemaValidator()
+        
+        schema = {
+            "username": {
+                "type": "str",
+                "min_length": 3,
+                "max_length": 20,
+                "pattern": r"^[a-zA-Z0-9_]+$"
+            },
+            "email": {
+                "type": "str",
+                "pattern": r"^[^@]+@[^@]+\.[^@]+$"
+            },
+            "age": {
+                "type": "int",
+                "min_value": 0,
+                "max_value": 150
+            },
+            "tags": {
+                "type": "list",
+                "min_items": 1,
+                "max_items": 5
+            },
+            "status": {
+                "type": "str",
+                "choices": ["active", "inactive", "pending"]
+            }
+        }
+        
+        validator.register_schema("user_profile", schema)
+        
+        # Valid data
+        valid_data = {
+            "username": "john_doe",
+            "email": "john@example.com",
+            "age": 25,
+            "tags": ["developer", "python"],
+            "status": "active"
+        }
+        assert validator.validate(valid_data, "user_profile")
+        
+        # Test various invalid cases
+        invalid_cases = [
+            # Username too short
+            {**valid_data, "username": "jo"},
+            # Invalid email
+            {**valid_data, "email": "invalid-email"},
+            # Age out of range
+            {**valid_data, "age": 200},
+            # Empty tags list
+            {**valid_data, "tags": []},
+            # Invalid status
+            {**valid_data, "status": "unknown"}
+        ]
+        
+        for invalid_data in invalid_cases:
+            with pytest.raises(ValidationError):
+                validator.validate(invalid_data, "user_profile")
+    
+    def test_optional_fields(self):
+        """Test schema with optional fields"""
+        validator = SchemaValidator()
+        
+        schema = {
+            "name": {"type": "str", "required": True},
+            "description": {"type": "str", "required": False},
+            "metadata": {"type": "dict", "required": False}
+        }
+        
+        validator.register_schema("item", schema)
+        
+        # Valid with all fields
+        full_data = {
+            "name": "Test Item",
+            "description": "A test item",
+            "metadata": {"version": 1}
+        }
+        assert validator.validate(full_data, "item")
+        
+        # Valid with only required fields
+        minimal_data = {"name": "Test Item"}
+        assert validator.validate(minimal_data, "item")
+        
+        # Invalid - missing required field
+        invalid_data = {"description": "Missing name"}
+        with pytest.raises(ValidationError):
+            validator.validate(invalid_data, "item")
+    
+    def test_custom_validator_function(self):
+        """Test custom validator functions"""
+        validator = SchemaValidator()
+        
+        def is_even(value):
+            return value % 2 == 0
+        
+        schema = {
+            "number": {
+                "type": "int",
+                "validator": is_even
+            }
+        }
+        
+        validator.register_schema("even_number", schema)
+        
+        # Valid even number
+        assert validator.validate({"number": 4}, "even_number")
+        
+        # Invalid odd number
+        with pytest.raises(ValidationError):
+            validator.validate({"number": 3}, "even_number")
+    
+    def test_validation_statistics(self):
+        """Test validation statistics tracking"""
+        validator = SchemaValidator()
+        
+        schema = {"name": "str"}
+        validator.register_schema("simple", schema)
+        
+        # Reset stats
+        validator.reset_validation_stats()
+        stats = validator.get_validation_stats()
+        assert stats["validations_performed"] == 0
+        assert stats["validation_failures"] == 0
+        
+        # Perform successful validation
+        validator.validate({"name": "test"}, "simple")
+        stats = validator.get_validation_stats()
+        assert stats["validations_performed"] == 1
+        assert stats["validation_failures"] == 0
+        
+        # Perform failed validation
+        try:
+            validator.validate({"name": 123}, "simple")
+        except ValidationError:
+            pass
+        
+        stats = validator.get_validation_stats()
+        assert stats["validations_performed"] == 2
+        assert stats["validation_failures"] == 1
+
+
+class TestTypeAnnotationExtractor:
+    """Tests for TypeAnnotationExtractor class"""
+    
+    def test_function_schema_extraction(self):
+        """Test extracting schema from function annotations"""
+        extractor = TypeAnnotationExtractor()
+        
+        def sample_function(name: str, age: int, active: bool = True) -> dict:
+            return {"name": name, "age": age, "active": active}
+        
+        schema = extractor.extract_function_schema(sample_function)
+        
+        assert schema["function_name"] == "sample_function"
+        assert "parameters" in schema
+        assert "return_type" in schema
+        
+        # Check parameter types
+        params = schema["parameters"]
+        assert params["name"]["type"] == "str"
+        assert params["name"]["required"] is True
+        assert params["age"]["type"] == "int"
+        assert params["age"]["required"] is True
+        assert params["active"]["type"] == "bool"
+        assert params["active"]["required"] is False  # Has default value
+        
+        # Check return type
+        assert schema["return_type"]["type"] == "dict"
+    
+    def test_class_schema_extraction(self):
+        """Test extracting schema from class annotations"""
+        extractor = TypeAnnotationExtractor()
+        
+        class SampleClass:
+            name: str
+            age: int
+            metadata: Optional[dict] = None
+            
+            def get_info(self) -> str:
+                return f"{self.name}, {self.age}"
+        
+        schema = extractor.extract_class_schema(SampleClass)
+        
+        assert schema["class_name"] == "SampleClass"
+        assert "attributes" in schema
+        assert "methods" in schema
+        
+        # Check attributes
+        attrs = schema["attributes"]
+        assert attrs["name"]["type"] == "str"
+        assert attrs["age"]["type"] == "int"
+        assert attrs["metadata"]["required"] is False  # Optional type
+    
+    def test_complex_type_annotations(self):
+        """Test complex type annotations"""
+        from typing import List, Dict, Union, Optional
+        
+        extractor = TypeAnnotationExtractor()
+        
+        def complex_function(
+            items: List[str],
+            mapping: Dict[str, int],
+            optional_data: Optional[str] = None,
+            union_field: Union[int, str] = "default"
+        ) -> bool:
+            return True
+        
+        schema = extractor.extract_function_schema(complex_function)
+        params = schema["parameters"]
+        
+        # List type
+        assert params["items"]["type"] == "list"
+        assert params["items"]["item_type"]["type"] == "str"
+        
+        # Dict type
+        assert params["mapping"]["type"] == "dict"
+        assert params["mapping"]["key_type"]["type"] == "str"
+        assert params["mapping"]["value_type"]["type"] == "int"
+        
+        # Optional type
+        assert params["optional_data"]["required"] is False
+        
+        # Union type
+        assert params["union_field"]["type"] == "union"
+        assert len(params["union_field"]["types"]) == 2
+
+
+class TestStructuredDataValidator:
+    """Tests for StructuredDataValidator class"""
+    
+    def test_explicit_schema_registration(self):
+        """Test registering explicit schemas"""
+        validator = StructuredDataValidator()
+        
+        schema = {
+            "user_id": "str",
+            "score": {"type": "int", "min_value": 0, "max_value": 100}
+        }
+        
+        validator.register_schema("game_score", schema)
+        
+        # Valid data
+        valid_data = {"user_id": "user123", "score": 85}
+        assert validator.validate(valid_data, "game_score")
+        
+        # Invalid data
+        invalid_data = {"user_id": "user123", "score": 150}
+        with pytest.raises(ValidationError):
+            validator.validate(invalid_data, "game_score")
+    
+    def test_function_schema_registration(self):
+        """Test auto-registering function schemas"""
+        validator = StructuredDataValidator()
+        
+        def process_order(order_id: str, amount: float, items: list) -> bool:
+            return True
+        
+        schema_name = validator.register_function_schema(process_order)
+        assert schema_name == "func_process_order"
+        
+        # Validate against function schema
+        valid_data = {
+            "order_id": "ORDER123",
+            "amount": 99.99,
+            "items": ["item1", "item2"]
+        }
+        assert validator.validate(valid_data, schema_name)
+        
+        # Invalid data
+        invalid_data = {
+            "order_id": "ORDER123",
+            "amount": "99.99",  # Should be float
+            "items": ["item1", "item2"]
+        }
+        with pytest.raises(ValidationError):
+            validator.validate(invalid_data, schema_name)
+    
+    def test_class_schema_registration(self):
+        """Test auto-registering class schemas"""
+        validator = StructuredDataValidator()
+        
+        @dataclass
+        class Product:
+            name: str
+            price: float
+            in_stock: bool
+        
+        schema_name = validator.register_class_schema(Product)
+        assert schema_name == "class_Product"
+        
+        # Validate against class schema
+        valid_data = {
+            "name": "Widget",
+            "price": 19.99,
+            "in_stock": True
+        }
+        assert validator.validate(valid_data, schema_name)
+    
+    def test_validate_against_function(self):
+        """Test direct validation against function"""
+        validator = StructuredDataValidator()
+        
+        def log_event(event_type: str, timestamp: datetime, data: dict) -> None:
+            pass
+        
+        valid_data = {
+            "event_type": "user_login",
+            "timestamp": datetime.now(),
+            "data": {"user_id": "123"}
+        }
+        
+        assert validator.validate_against_function(log_event, valid_data)
+        
+        # Invalid - wrong type
+        invalid_data = {
+            "event_type": "user_login",
+            "timestamp": "2024-01-01",  # Should be datetime
+            "data": {"user_id": "123"}
+        }
+        
+        with pytest.raises(ValidationError):
+            validator.validate_against_function(log_event, invalid_data)
+    
+    def test_schema_info_and_listing(self):
+        """Test schema information and listing functionality"""
+        validator = StructuredDataValidator()
+        
+        # Register explicit schema
+        explicit_schema = {"name": "str", "value": "int"}
+        validator.register_schema("explicit_test", explicit_schema)
+        
+        # Register function schema
+        def test_function(param: str) -> bool:
+            return True
+        
+        func_schema_name = validator.register_function_schema(test_function)
+        
+        # List schemas
+        schemas = validator.list_schemas()
+        assert "explicit_test" in schemas
+        assert func_schema_name in schemas
+        
+        # Get schema info
+        explicit_info = validator.get_schema_info("explicit_test")
+        assert explicit_info["type"] == "explicit"
+        
+        func_info = validator.get_schema_info(func_schema_name)
+        assert func_info["function_name"] == "test_function"
+
+
+class TestValidationDecorator:
+    """Tests for the auto_validate_function decorator"""
+    
+    def test_function_validation_decorator(self):
+        """Test the auto validation decorator"""
+        
+        @auto_validate_function
+        def create_user(name: str, age: int, email: str) -> dict:
+            return {"name": name, "age": age, "email": email}
+        
+        # Valid call should work
+        result = create_user("John", 30, "john@example.com")
+        assert result["name"] == "John"
+        
+        # Invalid call should raise ValidationError
+        with pytest.raises(ValidationError):
+            create_user("John", "thirty", "john@example.com")  # age should be int
+    
+    def test_decorator_preserves_function_properties(self):
+        """Test that decorator preserves function name and docstring"""
+        
+        def original_function(param: str) -> str:
+            """Original function docstring"""
+            return param
+        
+        decorated = auto_validate_function(original_function)
+        
+        assert decorated.__name__ == original_function.__name__
+        assert decorated.__doc__ == original_function.__doc__
+
+
+class TestGlobalValidationFunctions:
+    """Tests for global validation functions"""
+    
+    def test_global_schema_registration(self):
+        """Test global schema registration and validation"""
+        # Register a global schema
+        schema = {
+            "request_id": "str",
+            "user_id": "str",
+            "action": {"type": "str", "choices": ["create", "read", "update", "delete"]}
+        }
+        
+        register_validation_schema("api_request", schema)
+        
+        # Valid data
+        valid_data = {
+            "request_id": "req_123",
+            "user_id": "user_456",
+            "action": "create"
+        }
+        
+        assert validate_log_data(valid_data, "api_request")
+        
+        # Invalid data
+        invalid_data = {
+            "request_id": "req_123",
+            "user_id": "user_456",
+            "action": "invalid_action"
+        }
+        
+        with pytest.raises(ValidationError):
+            validate_log_data(invalid_data, "api_request")
+    
+    def test_global_validation_statistics(self):
+        """Test global validation statistics"""
+        # Reset stats
+        reset_validation_stats()
+        stats = get_validation_stats()
+        assert stats["validations_performed"] == 0
+        
+        # Register and use a schema
+        simple_schema = {"name": "str"}
+        register_validation_schema("simple_test", simple_schema)
+        
+        # Perform validations
+        validate_log_data({"name": "test"}, "simple_test")
+        
+        try:
+            validate_log_data({"name": 123}, "simple_test")
+        except ValidationError:
+            pass
+        
+        stats = get_validation_stats()
+        assert stats["validations_performed"] == 2
+        assert stats["validation_failures"] == 1
+
+
+class TestValidationErrorHandling:
+    """Tests for validation error handling"""
+    
+    def test_missing_schema_error(self):
+        """Test error when schema doesn't exist"""
+        validator = SchemaValidator()
+        
+        with pytest.raises(ValidationError) as exc_info:
+            validator.validate({"test": "data"}, "nonexistent_schema")
+        
+        assert "not found" in str(exc_info.value)
+    
+    def test_validation_error_messages(self):
+        """Test descriptive validation error messages"""
+        validator = SchemaValidator()
+        
+        schema = {
+            "name": {"type": "str", "min_length": 5},
+            "age": {"type": "int", "min_value": 18}
+        }
+        
+        validator.register_schema("test_errors", schema)
+        
+        # Test multiple validation errors
+        invalid_data = {
+            "name": "abc",    # Too short
+            "age": 15         # Too young
+        }
+        
+        with pytest.raises(ValidationError) as exc_info:
+            validator.validate(invalid_data, "test_errors")
+        
+        error_message = str(exc_info.value)
+        assert "at least 5 characters" in error_message
+        assert "at least 18" in error_message
+    
+    def test_custom_validator_error_handling(self):
+        """Test error handling in custom validators"""
+        validator = SchemaValidator()
+        
+        def failing_validator(value):
+            raise Exception("Custom validator failed")
+        
+        schema = {
+            "field": {"type": "str", "validator": failing_validator}
+        }
+        
+        validator.register_schema("failing_test", schema)
+        
+        with pytest.raises(ValidationError) as exc_info:
+            validator.validate({"field": "test"}, "failing_test")
+        
+        assert "validation error" in str(exc_info.value)
+
+
+class TestSchemaValidationIntegration:
+    """Integration tests for schema validation with serialization"""
+    
+    def test_validation_with_serialization(self):
+        """Test validation combined with serialization"""
+        # Create a schema for log entries
+        log_schema = {
+            "level": {"type": "str", "choices": ["DEBUG", "INFO", "WARNING", "ERROR"]},
+            "message": "str",
+            "timestamp": "datetime",
+            "user_id": {"type": "str", "required": False},
+            "data": {"type": "dict", "required": False}
+        }
+        
+        register_validation_schema("log_entry", log_schema)
+        
+        # Create log data that needs serialization
+        log_data = {
+            "level": "INFO",
+            "message": "User action performed",
+            "timestamp": datetime.now(),
+            "user_id": "user_123",
+            "data": {
+                "action": "login",
+                "ip": "192.168.1.1",
+                "user_agent": "Mozilla/5.0..."
+            }
+        }
+        
+        # Serialize the data first
+        serialized_data = serialize_for_logging(log_data)
+        
+        # Note: After serialization, datetime becomes string, so validation would fail
+        # This demonstrates the importance of validating before serialization
+        
+        # Validate original data (before serialization)
+        assert validate_log_data(log_data, "log_entry")
+    
+    def test_validation_performance(self):
+        """Test validation performance with large schemas"""
+        import time
+        
+        # Create a large schema
+        large_schema = {}
+        for i in range(100):
+            large_schema[f"field_{i}"] = {
+                "type": "str" if i % 2 == 0 else "int",
+                "required": i < 50  # First 50 are required
+            }
+        
+        validator = SchemaValidator()
+        validator.register_schema("large_schema", large_schema)
+        
+        # Create matching data
+        test_data = {}
+        for i in range(50):  # Only required fields
+            if i % 2 == 0:
+                test_data[f"field_{i}"] = f"value_{i}"
+            else:
+                test_data[f"field_{i}"] = i
+        
+        # Measure validation performance
+        start_time = time.perf_counter()
+        iterations = 100
+        
+        for _ in range(iterations):
+            validator.validate(test_data, "large_schema")
+        
+        total_time = time.perf_counter() - start_time
+        avg_time = total_time / iterations
+        
+        # Should be reasonably fast (less than 1ms per validation)
+        assert avg_time < 0.001, f"Validation too slow: {avg_time:.4f}s average"
