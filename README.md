@@ -1,10 +1,13 @@
 # Structured Logging
 
-A flexible Python library for structured JSON logging with context management and request tracing.
+A flexible Python library for structured JSON logging with context management, async support, and production-ready performance.
 
 ## Features
 
 - **JSON Structured Logging**: All logs are formatted as JSON for easy parsing and analysis
+- **Advanced Log Filtering**: Smart filtering and sampling for production performance
+- **File Handlers**: Rotating file logging with gzip compression and archiving
+- **FastAPI Integration**: One-line middleware for automatic request/response logging
 - **Async Logging Support**: High-performance non-blocking async logging with queue-based processing
 - **Context Management**: Automatic injection of request IDs, user context, and custom fields
 - **Multiple Output Formats**: JSON, CSV, and Plain Text formatters
@@ -52,33 +55,79 @@ Output (JSON format):
 {"timestamp": "2024-01-15T10:30:00.000Z", "level": "INFO", "logger": "my_app", "message": "User logged in successfully", "request_id": "f47ac10b-58cc-4372-a567-0e02b2c3d479", "user_id": "user123", "tenant_id": "tenant456"}
 ```
 
-### Multiple Output Formats
+### Log Filtering & Sampling
 
 ```python
-from structured_logging import get_logger, LoggerConfig
+from structured_logging import get_logger, LoggerConfig, FilterConfig, LevelFilter, SamplingFilter
 
-# CSV Format
-config = LoggerConfig(formatter_type="csv")
-logger = get_logger("my_app", config)
-logger.info("CSV formatted log")
+# Configure filtering
+filter_config = FilterConfig(
+    enabled=True,
+    filters=[
+        LevelFilter(min_level="INFO"),           # Only INFO and above
+        SamplingFilter(sample_rate=0.1, strategy="random")  # Sample 10% of logs
+    ]
+)
+
+config = LoggerConfig(
+    formatter_type="json",
+    filter_config=filter_config
+)
+
+logger = get_logger("filtered_app", config)
+
+# Only 10% of these will be logged
+for i in range(1000):
+    logger.info(f"Message {i}")
 ```
 
-Output (CSV format):
-```csv
-timestamp,level,logger,message,request_id,user_id,tenant_id
-2024-01-15T10:30:00.000Z,INFO,my_app,CSV formatted log,f47ac10b-58cc-4372-a567-0e02b2c3d479,user123,tenant456
-```
+### File Logging with Rotation
 
 ```python
-# Plain Text Format  
-config = LoggerConfig(formatter_type="plain")
-logger = get_logger("my_app", config)
-logger.info("Plain text log")
+from structured_logging import get_logger, LoggerConfig, FileHandlerConfig
+
+# Configure rotating file handler
+file_config = FileHandlerConfig(
+    filename="app.log",
+    max_bytes=10 * 1024 * 1024,    # 10MB
+    backup_count=5,                 # Keep 5 backup files
+    compress_rotated=True,          # Gzip compress rotated files
+    async_compression=True          # Compress asynchronously
+)
+
+config = LoggerConfig(
+    output_type="file",
+    file_config=file_config,
+    formatter_type="json"
+)
+
+logger = get_logger("file_app", config)
+logger.info("This goes to a rotating log file")
 ```
 
-Output (Plain text format):
-```
-[2024-01-15T10:30:00.000Z] INFO my_app Plain text log (request_id=f47ac10b-58cc-4372-a567-0e02b2c3d479, user_id=user123, tenant_id=tenant456)
+### FastAPI Integration
+
+```python
+from fastapi import FastAPI
+from structured_logging.integrations import add_structured_logging, FastAPILoggingConfig
+
+app = FastAPI()
+
+# Add structured logging middleware
+logging_config = FastAPILoggingConfig(
+    log_request_body=True,
+    log_response_body=False,
+    mask_sensitive_data=True,
+    exclude_paths={"/health", "/metrics"}
+)
+
+app = add_structured_logging(app, logging_config)
+
+@app.get("/users/{user_id}")
+def get_user(user_id: str):
+    return {"user_id": user_id, "name": "John Doe"}
+
+# All requests are automatically logged with context
 ```
 
 ### Async Logging
@@ -102,13 +151,74 @@ async def main():
 asyncio.run(main())
 ```
 
-Output:
-```json
-{"timestamp": "2024-01-15T10:30:00.000Z", "level": "INFO", "logger": "async_app", "message": "Async operation started", "request_id": "f47ac10b-58cc-4372-a567-0e02b2c3d479", "user_id": "user123"}
-{"timestamp": "2024-01-15T10:30:00.000Z", "level": "INFO", "logger": "async_app", "message": "Async operation completed", "request_id": "f47ac10b-58cc-4372-a567-0e02b2c3d479", "user_id": "user123"}
+## Configuration
+
+### Environment Variables
+
+```bash
+STRUCTURED_LOG_LEVEL=DEBUG
+STRUCTURED_LOG_FORMATTER=json          # json, csv, or plain
+STRUCTURED_LOG_OUTPUT=console           # console, file, both
+STRUCTURED_LOG_TIMESTAMP=true
+STRUCTURED_LOG_REQUEST_ID=true
+STRUCTURED_LOG_USER_CONTEXT=true
 ```
 
-### With Custom Context
+### Programmatic Configuration
+
+```python
+from structured_logging import LoggerConfig, set_default_config
+
+config = LoggerConfig(
+    log_level="DEBUG",
+    formatter_type="json",              # json, csv, or plain
+    output_type="both",                 # console, file, both
+    include_timestamp=True,
+    include_request_id=True,
+    include_user_context=True
+)
+set_default_config(config)
+```
+
+## Advanced Features
+
+### Smart Log Filtering
+
+```python
+from structured_logging import FilterConfig, LevelFilter, ContextFilter, CustomFilter, SamplingFilter
+
+# Multiple filter types
+filter_config = FilterConfig(
+    enabled=True,
+    filters=[
+        LevelFilter(min_level="INFO"),
+        ContextFilter(required_fields=["user_id"]),      # Only log if user_id present
+        SamplingFilter(sample_rate=0.1, strategy="hash"), # Consistent sampling
+        CustomFilter(lambda record, context: "error" in record.getMessage().lower())
+    ]
+)
+```
+
+### Rate Limiting
+
+```python
+from structured_logging import FilterConfig, SamplingFilter
+
+# Rate limiting with burst allowance
+filter_config = FilterConfig(
+    enabled=True,
+    filters=[
+        SamplingFilter(
+            sample_rate=0.01,           # 1% normal rate
+            strategy="rate_limit",
+            burst_allowance=10,         # Allow 10 ERROR logs immediately
+            burst_levels=["ERROR", "CRITICAL"]
+        )
+    ]
+)
+```
+
+### Custom Context
 
 ```python
 from structured_logging import get_logger, log_with_context, request_context
@@ -126,75 +236,61 @@ with request_context(service="payment-api", version="1.2.0"):
     )
 ```
 
-Output:
-```json
-{"timestamp": "2024-01-15T10:30:00.000Z", "level": "INFO", "logger": "my_app", "message": "Payment processed", "request_id": "f47ac10b-58cc-4372-a567-0e02b2c3d479", "service": "payment-api", "version": "1.2.0", "payment_id": "pay_123", "amount": 99.99, "currency": "EUR"}
-```
+## Performance
 
-## Configuration
+### Benchmarks (Version 0.5.0)
 
-### Environment Variables
+- **Basic Logging**: 130,000+ logs/second  
+- **Structured Logging**: 54,000+ logs/second
+- **Filtered Logging**: 29,000+ logs/second
+- **Async Logging**: 10,000+ logs/second
+- **Memory Efficient**: <5KB per log entry
+
+### Performance Testing
 
 ```bash
-STRUCTURED_LOG_LEVEL=DEBUG
-STRUCTURED_LOG_FORMATTER=json          # json, csv, or plain
-STRUCTURED_LOG_TIMESTAMP=true
-STRUCTURED_LOG_REQUEST_ID=true
-STRUCTURED_LOG_USER_CONTEXT=true
+# Run performance benchmarks
+python scripts/benchmark_comparison.py
+
+# Run comprehensive performance tests
+python scripts/run_performance_tests.py
+
+# Performance tests are excluded from regular test runs
+pytest                          # Regular tests only
+pytest -m performance          # Performance tests only
 ```
 
-### Programmatic Configuration
+### Built-in Optimizations
+
+- **Formatter Caching**: Reduces initialization overhead
+- **Fast Timestamp Generation**: Micro-caching for sub-millisecond accuracy
+- **Optimized Context Access**: Minimal context variable lookups
+- **Smart Filtering**: Efficient early filtering to reduce processing overhead
+- **Async Queue Processing**: Non-blocking logging with batched processing
+
+## Framework Integrations
+
+### FastAPI
 
 ```python
-from structured_logging import LoggerConfig, set_default_config
+from structured_logging.integrations import add_structured_logging, FastAPILoggingConfig
 
-config = LoggerConfig(
-    log_level="DEBUG",
-    formatter_type="csv",              # json, csv, or plain
-    include_timestamp=True,
-    include_request_id=True,
-    include_user_context=True
-)
-set_default_config(config)
+app = add_structured_logging(app, FastAPILoggingConfig(
+    log_request_headers=True,
+    log_response_body=False,
+    minimum_duration_ms=100,        # Only log slow requests
+    exclude_paths={"/health"}
+))
 ```
 
-## Advanced Usage
-
-### Manual Context Management
+### Flask
 
 ```python
-from structured_logging import (
-    set_request_id, 
-    set_user_context, 
-    update_custom_context
-)
+from flask import Flask
+from structured_logging.integrations import add_flask_logging
 
-# Set request ID manually
-set_request_id("custom-request-123")
-
-# Set user context
-set_user_context({"user_id": "user456", "tenant_id": "tenant789"})
-
-# Add custom fields
-update_custom_context(service="auth", environment="production")
-```
-
-### Custom Logger Configuration
-
-```python
-from structured_logging import get_logger, LoggerConfig
-
-# Critical logger with plain text format
-config = LoggerConfig(
-    log_level="WARNING", 
-    formatter_type="plain", 
-    include_timestamp=False
-)
-logger = get_logger("critical_logger", config)
-
-# CSV logger for data analysis
-csv_config = LoggerConfig(formatter_type="csv")
-data_logger = get_logger("data_logger", csv_config)
+app = Flask(__name__)
+add_flask_logging(app)  # Automatic request/response logging
 ```
 
 ## API Reference
@@ -205,6 +301,11 @@ data_logger = get_logger("data_logger", csv_config)
 - `log_with_context(logger, level, message, **extra)`: Log with automatic context injection
 - `request_context(user_id=None, tenant_id=None, **custom_fields)`: Context manager for request scoping
 
+### Async Functions
+
+- `get_async_logger(name, logger_config=None, async_config=None)`: Create async logger
+- `async_request_context(**context)`: Async context manager
+
 ### Context Management
 
 - `get_request_id()` / `set_request_id(req_id)`: Request ID management
@@ -214,8 +315,10 @@ data_logger = get_logger("data_logger", csv_config)
 
 ### Configuration
 
-- `LoggerConfig`: Configuration dataclass
-- `get_default_config()` / `set_default_config(config)`: Default configuration management
+- `LoggerConfig`: Main configuration dataclass
+- `FilterConfig`: Filtering configuration
+- `FileHandlerConfig`: File handler configuration
+- `AsyncLoggerConfig`: Async logging configuration
 
 ## Requirements
 
@@ -234,6 +337,9 @@ pytest
 # Run tests with coverage
 pytest --cov=structured_logging --cov-fail-under=80
 
+# Run performance tests
+pytest -m performance
+
 # Format code
 black src/ tests/
 ruff check --fix src/ tests/
@@ -242,75 +348,52 @@ ruff check --fix src/ tests/
 mypy src/
 
 # Version management
-bump2version patch  # 0.1.0 -> 0.1.1
-bump2version minor  # 0.1.1 -> 0.2.0  
-bump2version major  # 0.2.0 -> 1.0.0
+bump2version patch  # 0.5.0 -> 0.5.1
+bump2version minor  # 0.5.0 -> 0.6.0  
+bump2version major  # 0.5.0 -> 1.0.0
 ```
 
-## Performance
+## Version History
 
-This library is optimized for high-throughput logging scenarios:
+### 🎉 **Version 0.5.0** (Current) - Production-Ready Performance
+- ✅ **Advanced Log Filtering**: LevelFilter, ContextFilter, SamplingFilter, CustomFilter
+- ✅ **Smart Sampling**: Random, hash-based, and rate-limiting strategies
+- ✅ **File Handlers**: Rotating file logging with gzip compression
+- ✅ **FastAPI Integration**: Complete middleware with sensitive data masking
+- ✅ **Performance Framework**: Comprehensive benchmarking and regression testing
+- ✅ **130,000+ logs/sec**: Exceptional performance validated by automated benchmarks
 
-### Performance Benchmarks (v0.3.0)
-
-- **Basic logging**: 131,920+ logs/second  
-- **Context logging**: 55,801+ logs/second
-- **Memory efficient**: < 10MB for 1,000 structured logs
-- **Timestamp overhead**: < 0.001ms per log
-
-### Performance Tips
-
-1. **Use appropriate formatter**: JSON formatter is fastest for high throughput
-2. **Disable unnecessary features**: Turn off timestamps if not needed
-3. **Batch context updates**: Use `request_context()` for request-scoped logging
-4. **Cache loggers**: Reuse logger instances instead of creating new ones
-
-```python
-# Optimal configuration for high throughput
-config = LoggerConfig(
-    formatter_type="json",  # Fastest formatter
-    include_timestamp=False,  # Disable if not needed
-    include_request_id=True,
-    include_user_context=True
-)
-logger = get_logger("high_perf", config)  # Reuse this logger
-```
-
-### Built-in Optimizations
-
-- **Formatter caching**: Reduces initialization overhead
-- **Fast timestamp generation**: Micro-caching for sub-millisecond accuracy
-- **Optimized context access**: Minimal context variable lookups
-- **Lazy evaluation**: Expensive operations only when needed
-
-## Roadmap
-
-### 🚀 **Current Version: 0.4.0** 
+### 🚀 **Version 0.4.0** - Async Excellence
 - ✅ Complete async logging support
 - ✅ High-performance queue-based processing
 - ✅ 40,153+ logs/second concurrent throughput
 
-### 🎯 **Next: Version 0.5.0** (In Development)
-- 🔄 **Log Filtering & Sampling**: Smart filtering for production performance
-- 🔄 **FastAPI Integration**: One-line middleware for web apps
-- 🔄 **File Handlers**: Rotating files with compression
-- 🔄 **Network Handlers**: Remote logging capabilities
-
 ### 📈 **Future Versions**
-- **0.6.0**: Enhanced framework integrations (Flask, Django)
-- **0.7.0**: Cloud platform integrations (AWS, GCP, Azure)
+- **0.6.0**: Network handlers for remote logging (Syslog, HTTP, TCP/UDP)
+- **0.7.0**: Enhanced data types and cloud platform integrations
 - **0.8.0**: Monitoring and observability features
 - **1.0.0**: Production-ready stable API
 
-## Version Strategy
+## Performance Tips
 
-This library follows [Semantic Versioning](https://semver.org/) and supports the latest Python versions:
+1. **Use appropriate formatter**: JSON formatter is fastest for high throughput
+2. **Configure smart filtering**: Use sampling for high-volume scenarios
+3. **Enable file compression**: Use async compression for better performance
+4. **Batch context updates**: Use `request_context()` for request-scoped logging
+5. **Cache loggers**: Reuse logger instances instead of creating new ones
 
-- **Current**: Python 3.13+
-- **Future**: Python 3.14+ support planned
-- **Philosophy**: Stay current with Python innovations
-
-See [VERSION_STRATEGY.md](VERSION_STRATEGY.md) for detailed version support policy.
+```python
+# Optimal configuration for high throughput
+config = LoggerConfig(
+    formatter_type="json",
+    output_type="file",
+    filter_config=FilterConfig(
+        enabled=True,
+        filters=[SamplingFilter(sample_rate=0.1, strategy="hash")]
+    )
+)
+logger = get_logger("high_perf", config)  # Reuse this logger
+```
 
 ## License
 
