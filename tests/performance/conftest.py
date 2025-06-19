@@ -24,10 +24,10 @@ def pytest_collection_modifyitems(config, items):
 def performance_config():
     """Configuration for performance tests"""
     return {
-        "min_throughput_basic": 50000,      # logs/sec for basic logging
+        "min_throughput_basic": 50000,  # logs/sec for basic logging
         "min_throughput_structured": 3000,  # logs/sec for structured logging
-        "min_throughput_filtered": 2000,    # logs/sec for filtered logging
-        "min_throughput_async": 10000,      # logs/sec for async logging
-        "max_memory_per_log": 1.0,          # KB per log entry
-        "max_filter_overhead": 50,          # % overhead for filtering
+        "min_throughput_filtered": 2000,  # logs/sec for filtered logging
+        "min_throughput_async": 10000,  # logs/sec for async logging
+        "max_memory_per_log": 1.0,  # KB per log entry
+        "max_filter_overhead": 50,  # % overhead for filtering
     }

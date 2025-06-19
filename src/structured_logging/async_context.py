@@ -7,15 +7,15 @@ that works seamlessly with asyncio and existing sync context system.
 
 import asyncio
 from contextlib import asynccontextmanager
-from typing import Any, Dict, Optional, AsyncGenerator
+from typing import Any, AsyncGenerator, Dict, Optional
 
 from .context import (
-    set_request_id, 
-    set_user_context, 
-    set_custom_context,
+    get_custom_context,
     get_request_id,
-    get_user_context, 
-    get_custom_context
+    get_user_context,
+    set_custom_context,
+    set_request_id,
+    set_user_context,
 )
 
 
@@ -28,25 +28,25 @@ async def async_request_context(
 ) -> AsyncGenerator[None, None]:
     """
     Async context manager for request-scoped logging context.
-    
+
     Automatically manages context variables across async boundaries
     using Python's contextvars which are asyncio-aware.
-    
+
     Args:
         user_id: Optional user identifier
-        tenant_id: Optional tenant identifier  
+        tenant_id: Optional tenant identifier
         request_id: Optional request identifier (auto-generated if None)
         **custom_fields: Additional custom context fields
-    
+
     Example:
         async with async_request_context(user_id="user123"):
             await async_logger.ainfo("User action")
     """
     # Store original context for restoration
-    original_request_id = get_request_id()
-    original_user_context = get_user_context()
-    original_custom_context = get_custom_context()
-    
+    get_request_id()
+    get_user_context()
+    get_custom_context()
+
     try:
         # Set request ID (generate if not provided)
         if request_id is not None:
@@ -54,8 +54,9 @@ async def async_request_context(
         elif request_id is None:
             # Always generate new request ID for new context
             import uuid
+
             set_request_id(str(uuid.uuid4()))
-        
+
         # Set user context if provided
         if user_id is not None or tenant_id is not None:
             user_context = {}
@@ -64,16 +65,16 @@ async def async_request_context(
             if tenant_id is not None:
                 user_context["tenant_id"] = tenant_id
             set_user_context(user_context)
-        
+
         # Set custom context fields
         if custom_fields:
             # Merge with existing custom context
             current_custom = get_custom_context() or {}
             updated_custom = {**current_custom, **custom_fields}
             set_custom_context(updated_custom)
-        
+
         yield
-        
+
     finally:
         # Context vars automatically handle restoration in async contexts
         # No manual restoration needed due to contextvars behavior
@@ -114,7 +115,7 @@ class AsyncContextManager:
     """
     Utility class for managing async context state
     """
-    
+
     @staticmethod
     async def capture_context() -> Dict[str, Any]:
         """Capture current context state"""
@@ -123,7 +124,7 @@ class AsyncContextManager:
             "user_context": await aget_user_context(),
             "custom_context": await aget_custom_context(),
         }
-    
+
     @staticmethod
     async def restore_context(context_state: Dict[str, Any]) -> None:
         """Restore context from captured state"""

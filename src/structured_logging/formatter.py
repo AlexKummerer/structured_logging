@@ -2,7 +2,6 @@ import csv
 import io
 import json
 import logging
-from datetime import datetime
 from typing import Any, Dict, Optional
 
 from .config import LoggerConfig, get_default_config
@@ -30,12 +29,13 @@ class StructuredFormatter(logging.Formatter):
 
         # Optimized context extraction: Use generator for memory efficiency
         context_items = (
-            (key[4:], value) for key, value in record.__dict__.items() 
+            (key[4:], value)
+            for key, value in record.__dict__.items()
             if key.startswith("ctx_")
         )
         log_entry.update(context_items)
 
-        return json.dumps(log_entry, default=str, separators=(',', ':'))
+        return json.dumps(log_entry, default=str, separators=(",", ":"))
 
 
 class CSVFormatter(logging.Formatter):
@@ -62,7 +62,8 @@ class CSVFormatter(logging.Formatter):
 
         # Optimized context field extraction
         context_items = {
-            key[4:]: value for key, value in record.__dict__.items() 
+            key[4:]: value
+            for key, value in record.__dict__.items()
             if key.startswith("ctx_")
         }
         log_entry.update(context_items)
@@ -73,10 +74,10 @@ class CSVFormatter(logging.Formatter):
         # Efficient CSV generation
         output = io.StringIO()
         writer = csv.DictWriter(
-            output, 
-            fieldnames=all_fieldnames, 
+            output,
+            fieldnames=all_fieldnames,
             extrasaction="ignore",
-            lineterminator=""  # No extra newline
+            lineterminator="",  # No extra newline
         )
         writer.writerow(log_entry)
         csv_string = output.getvalue()
@@ -101,19 +102,16 @@ class PlainTextFormatter(logging.Formatter):
             parts.append(f"[{fast_timestamp()}]")
 
         # Core message parts
-        parts.extend([
-            record.levelname,
-            record.name,
-            record.getMessage()
-        ])
+        parts.extend([record.levelname, record.name, record.getMessage()])
 
         # Optimized context extraction: Use generator and join directly
         context_items = (
-            f"{key[4:]}={value}" for key, value in record.__dict__.items() 
+            f"{key[4:]}={value}"
+            for key, value in record.__dict__.items()
             if key.startswith("ctx_")
         )
         context_str = ", ".join(context_items)
-        
+
         if context_str:
             parts.append(f"({context_str})")
 

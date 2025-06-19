@@ -9,26 +9,26 @@ from typing import Optional
 @dataclass
 class AsyncLoggerConfig:
     """Configuration for async logging operations"""
-    
+
     # Queue configuration
     queue_size: int = 1000  # Maximum number of queued log entries
-    max_workers: int = 2    # Number of background log processors
-    
+    max_workers: int = 2  # Number of background log processors
+
     # Batching configuration
-    batch_size: int = 50           # Number of logs to batch together
-    flush_interval: float = 1.0    # Maximum time to wait before flushing (seconds)
-    
+    batch_size: int = 50  # Number of logs to batch together
+    flush_interval: float = 1.0  # Maximum time to wait before flushing (seconds)
+
     # Performance tuning
-    queue_timeout: float = 0.1     # Timeout for queue operations (seconds)
+    queue_timeout: float = 0.1  # Timeout for queue operations (seconds)
     shutdown_timeout: float = 5.0  # Timeout for graceful shutdown (seconds)
-    
+
     # Memory management
     max_memory_mb: Optional[int] = None  # Maximum memory usage (MB)
-    drop_on_overflow: bool = False       # Drop logs if queue is full
-    
+    drop_on_overflow: bool = False  # Drop logs if queue is full
+
     # Error handling
     error_callback: Optional[callable] = None  # Called when async logging errors occur
-    
+
     def __post_init__(self):
         """Validate configuration values"""
         if self.queue_size <= 0:

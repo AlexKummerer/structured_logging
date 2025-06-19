@@ -6,7 +6,34 @@ A flexible Python library for structured JSON logging with context management an
 
 __version__ = "0.4.0"
 
-from .config import LoggerConfig, get_default_config, set_default_config, FormatterType, OutputType
+# Async logging support
+from .async_config import (
+    AsyncLoggerConfig,
+    get_default_async_config,
+    set_default_async_config,
+)
+from .async_context import (
+    aget_custom_context,
+    aget_request_id,
+    aget_user_context,
+    aset_custom_context,
+    aset_request_id,
+    aset_user_context,
+    async_request_context,
+)
+from .async_logger import (
+    AsyncLogger,
+    alog_with_context,
+    get_async_logger,
+    shutdown_all_async_loggers,
+)
+from .config import (
+    FormatterType,
+    LoggerConfig,
+    OutputType,
+    get_default_config,
+    set_default_config,
+)
 from .context import (
     get_custom_context,
     get_request_id,
@@ -17,52 +44,35 @@ from .context import (
     set_user_context,
     update_custom_context,
 )
-from .formatter import StructuredFormatter, CSVFormatter, PlainTextFormatter
-from .logger import get_logger, log_with_context, get_filter_metrics, reset_filter_metrics
 from .filtering import (
-    FilterConfig, 
-    FilterEngine, 
-    LevelFilter, 
-    ContextFilter, 
-    CustomFilter, 
-    SamplingFilter, 
-    FilterResult
+    ContextFilter,
+    CustomFilter,
+    FilterConfig,
+    FilterEngine,
+    FilterResult,
+    LevelFilter,
+    SamplingFilter,
 )
+from .formatter import CSVFormatter, PlainTextFormatter, StructuredFormatter
 from .handlers import (
     FileHandlerConfig,
     RotatingFileHandler,
     TimedRotatingFileHandler,
-    create_file_logger
+    create_file_logger,
 )
 from .integrations import (
     FastAPILoggingConfig,
     FastAPILoggingMiddleware,
+    FlaskLoggingMiddleware,
     add_structured_logging,
     create_fastapi_logger_config,
     create_flask_logger_config,
-    FlaskLoggingMiddleware
 )
-
-# Async logging support
-from .async_config import (
-    AsyncLoggerConfig,
-    get_default_async_config,
-    set_default_async_config,
-)
-from .async_context import (
-    async_request_context,
-    aget_request_id,
-    aget_user_context,
-    aget_custom_context,
-    aset_request_id,
-    aset_user_context,
-    aset_custom_context,
-)
-from .async_logger import (
-    AsyncLogger,
-    get_async_logger,
-    alog_with_context,
-    shutdown_all_async_loggers,
+from .logger import (
+    get_filter_metrics,
+    get_logger,
+    log_with_context,
+    reset_filter_metrics,
 )
 
 __all__ = [
@@ -99,19 +109,18 @@ __all__ = [
     "TimedRotatingFileHandler",
     "create_file_logger",
     "FastAPILoggingConfig",
-    "FastAPILoggingMiddleware", 
+    "FastAPILoggingMiddleware",
     "add_structured_logging",
     "create_fastapi_logger_config",
     "create_flask_logger_config",
     "FlaskLoggingMiddleware",
-    
     # Async API
     "AsyncLoggerConfig",
     "get_default_async_config",
     "set_default_async_config",
     "async_request_context",
     "aget_request_id",
-    "aget_user_context", 
+    "aget_user_context",
     "aget_custom_context",
     "aset_request_id",
     "aset_user_context",

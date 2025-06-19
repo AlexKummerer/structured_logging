@@ -24,7 +24,7 @@ def test_csv_formatter_basic():
     )
 
     result = formatter.format(record)
-    
+
     # Should contain CSV headers and values
     assert "INFO" in result
     assert "test_logger" in result
@@ -48,7 +48,7 @@ def test_csv_formatter_with_context():
     record.ctx_user_id = "user-456"
 
     result = formatter.format(record)
-    
+
     # Should contain context values
     assert "req-123" in result
     assert "user-456" in result
@@ -68,7 +68,7 @@ def test_csv_formatter_without_timestamp():
     )
 
     result = formatter.format(record)
-    
+
     # Should not start with timestamp format
     assert not result.startswith("2")  # ISO timestamp starts with year
 
@@ -86,7 +86,7 @@ def test_plain_text_formatter_basic():
     )
 
     result = formatter.format(record)
-    
+
     # Should contain basic log elements
     assert "INFO" in result
     assert "test_logger" in result
@@ -110,7 +110,7 @@ def test_plain_text_formatter_with_context():
     record.ctx_user_id = "user-456"
 
     result = formatter.format(record)
-    
+
     # Should contain context in parentheses
     assert "request_id=req-123" in result
     assert "user_id=user-456" in result
@@ -131,7 +131,7 @@ def test_plain_text_formatter_without_timestamp():
     )
 
     result = formatter.format(record)
-    
+
     # Should not contain timestamp brackets
     assert "[" not in result or "]" not in result
 
@@ -140,7 +140,7 @@ def test_get_logger_with_csv_formatter():
     config = LoggerConfig(formatter_type="csv")
     set_default_config(config)
     logger = get_logger("test_csv_logger")
-    
+
     # Logger should be created successfully
     assert isinstance(logger, logging.Logger)
     assert logger.name == "test_csv_logger"
@@ -150,7 +150,7 @@ def test_get_logger_with_plain_formatter():
     config = LoggerConfig(formatter_type="plain")
     set_default_config(config)
     logger = get_logger("test_plain_logger")
-    
+
     # Logger should be created successfully
     assert isinstance(logger, logging.Logger)
     assert logger.name == "test_plain_logger"
@@ -161,7 +161,7 @@ def test_csv_formatter_with_request_context(caplog):
     set_default_config(config)
     logger = get_logger("test_csv_context_logger")
 
-    with request_context(user_id="user123", tenant_id="tenant456") as req_id:
+    with request_context(user_id="user123", tenant_id="tenant456"):
         with caplog.at_level(logging.INFO, logger="test_csv_context_logger"):
             log_with_context(logger, "info", "Test message")
 
@@ -174,7 +174,7 @@ def test_plain_formatter_with_request_context(caplog):
     set_default_config(config)
     logger = get_logger("test_plain_context_logger")
 
-    with request_context(user_id="user123", tenant_id="tenant456") as req_id:
+    with request_context(user_id="user123", tenant_id="tenant456"):
         with caplog.at_level(logging.INFO, logger="test_plain_context_logger"):
             log_with_context(logger, "info", "Test message")
 
@@ -186,10 +186,10 @@ def test_formatter_type_validation():
     # Test that invalid formatter types default to json
     config = LoggerConfig(formatter_type="json")
     assert config.formatter_type == "json"
-    
-    config = LoggerConfig(formatter_type="csv") 
+
+    config = LoggerConfig(formatter_type="csv")
     assert config.formatter_type == "csv"
-    
+
     config = LoggerConfig(formatter_type="plain")
     assert config.formatter_type == "plain"
 
@@ -198,11 +198,11 @@ def test_environment_formatter_selection(monkeypatch):
     monkeypatch.setenv("STRUCTURED_LOG_FORMATTER", "csv")
     config = LoggerConfig.from_env()
     assert config.formatter_type == "csv"
-    
+
     monkeypatch.setenv("STRUCTURED_LOG_FORMATTER", "plain")
     config = LoggerConfig.from_env()
     assert config.formatter_type == "plain"
-    
+
     monkeypatch.setenv("STRUCTURED_LOG_FORMATTER", "invalid")
     config = LoggerConfig.from_env()
     assert config.formatter_type == "json"  # Should default to json
