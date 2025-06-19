@@ -57,18 +57,18 @@ def get_logger(name: str, config: Optional[LoggerConfig] = None) -> logging.Logg
             from .network_handlers import HTTPHandler, SocketHandler, SyslogHandler
 
             # Determine handler type based on config
-            if hasattr(config.network_config, 'facility'):  # SyslogConfig
+            if hasattr(config.network_config, "facility"):  # SyslogConfig
                 network_handler = SyslogHandler(config.network_config)
-            elif hasattr(config.network_config, 'url'):  # HTTPConfig
+            elif hasattr(config.network_config, "url"):  # HTTPConfig
                 network_handler = HTTPHandler(config.network_config)
-            elif hasattr(config.network_config, 'protocol'):  # SocketConfig
+            elif hasattr(config.network_config, "protocol"):  # SocketConfig
                 network_handler = SocketHandler(config.network_config)
             else:
                 # Default to syslog
                 from .network_handlers import SyslogConfig
+
                 syslog_config = SyslogConfig(
-                    host=config.network_config.host,
-                    port=config.network_config.port
+                    host=config.network_config.host, port=config.network_config.port
                 )
                 network_handler = SyslogHandler(syslog_config)
 

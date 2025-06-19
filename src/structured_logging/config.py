@@ -8,7 +8,9 @@ if TYPE_CHECKING:
     from .network_handlers import NetworkHandlerConfig
 
 FormatterType = Literal["json", "csv", "plain"]
-OutputType = Literal["console", "file", "both", "network", "console+network", "file+network", "all"]
+OutputType = Literal[
+    "console", "file", "both", "network", "console+network", "file+network", "all"
+]
 
 
 @dataclass
@@ -97,37 +99,43 @@ class LoggerConfig:
         network_config = None
         if "network" in output_type:
             network_type = os.getenv("STRUCTURED_LOG_NETWORK_TYPE", "syslog").lower()
-            
+
             if network_type == "syslog":
                 from .network_handlers import SyslogConfig
-                
+
                 network_config = SyslogConfig(
                     host=os.getenv("STRUCTURED_LOG_SYSLOG_HOST", "localhost"),
                     port=int(os.getenv("STRUCTURED_LOG_SYSLOG_PORT", "514")),
                     facility=int(os.getenv("STRUCTURED_LOG_SYSLOG_FACILITY", "16")),
                     rfc_format=os.getenv("STRUCTURED_LOG_SYSLOG_RFC", "3164"),
                     app_name=os.getenv("STRUCTURED_LOG_APP_NAME", "python-app"),
-                    use_ssl=os.getenv("STRUCTURED_LOG_SYSLOG_SSL", "false").lower() == "true"
+                    use_ssl=os.getenv("STRUCTURED_LOG_SYSLOG_SSL", "false").lower()
+                    == "true",
                 )
             elif network_type == "http":
                 from .network_handlers import HTTPConfig
-                
+
                 network_config = HTTPConfig(
-                    url=os.getenv("STRUCTURED_LOG_HTTP_URL", "http://localhost:8080/logs"),
+                    url=os.getenv(
+                        "STRUCTURED_LOG_HTTP_URL", "http://localhost:8080/logs"
+                    ),
                     method=os.getenv("STRUCTURED_LOG_HTTP_METHOD", "POST"),
                     auth_type=os.getenv("STRUCTURED_LOG_HTTP_AUTH", "none"),
                     token=os.getenv("STRUCTURED_LOG_HTTP_TOKEN"),
                     api_key=os.getenv("STRUCTURED_LOG_HTTP_API_KEY"),
-                    batch_size=int(os.getenv("STRUCTURED_LOG_HTTP_BATCH_SIZE", "10"))
+                    batch_size=int(os.getenv("STRUCTURED_LOG_HTTP_BATCH_SIZE", "10")),
                 )
             elif network_type == "socket":
                 from .network_handlers import SocketConfig
-                
+
                 network_config = SocketConfig(
                     host=os.getenv("STRUCTURED_LOG_SOCKET_HOST", "localhost"),
                     port=int(os.getenv("STRUCTURED_LOG_SOCKET_PORT", "5140")),
                     protocol=os.getenv("STRUCTURED_LOG_SOCKET_PROTOCOL", "tcp"),
-                    keep_alive=os.getenv("STRUCTURED_LOG_SOCKET_KEEPALIVE", "true").lower() == "true"
+                    keep_alive=os.getenv(
+                        "STRUCTURED_LOG_SOCKET_KEEPALIVE", "true"
+                    ).lower()
+                    == "true",
                 )
 
         return cls(

@@ -6,13 +6,23 @@ from typing import Any, Dict, Optional
 
 from .config import LoggerConfig, get_default_config
 from .performance import fast_timestamp
-from .serializers import SerializationConfig, serialize_for_logging, serialize_for_logging_lazy_aware, LazySerializable, LazyDict
+from .serializers import (
+    LazyDict,
+    LazySerializable,
+    SerializationConfig,
+    serialize_for_logging,
+    serialize_for_logging_lazy_aware,
+)
 
 
 class StructuredFormatter(logging.Formatter):
     """JSON formatter for structured logging with enhanced serialization"""
 
-    def __init__(self, config: Optional[LoggerConfig] = None, serialization_config: Optional[SerializationConfig] = None):
+    def __init__(
+        self,
+        config: Optional[LoggerConfig] = None,
+        serialization_config: Optional[SerializationConfig] = None,
+    ):
         super().__init__()
         self.config = config or get_default_config()
         self.serialization_config = serialization_config or SerializationConfig()
@@ -34,7 +44,9 @@ class StructuredFormatter(logging.Formatter):
             if key.startswith("ctx_"):
                 context_key = key[4:]  # Remove ctx_ prefix
                 # Use lazy-aware serialization for complex types
-                log_entry[context_key] = serialize_for_logging_lazy_aware(value, self.serialization_config)
+                log_entry[context_key] = serialize_for_logging_lazy_aware(
+                    value, self.serialization_config
+                )
 
         # Handle lazy objects in JSON encoding
         return self._serialize_to_json(log_entry)
@@ -42,10 +54,10 @@ class StructuredFormatter(logging.Formatter):
     def _serialize_to_json(self, log_entry: Dict[str, Any]) -> str:
         """
         Serialize log entry to JSON, handling lazy objects appropriately
-        
+
         Args:
             log_entry: Dictionary containing log data with potential lazy objects
-            
+
         Returns:
             JSON string representation
         """
@@ -54,10 +66,11 @@ class StructuredFormatter(logging.Formatter):
             isinstance(value, (LazySerializable, LazyDict))
             for value in log_entry.values()
         )
-        
+
         if has_lazy_objects:
             # Use custom encoder that knows how to handle lazy objects
             from .serializers import EnhancedJSONEncoder
+
             encoder = EnhancedJSONEncoder(config=self.serialization_config)
             return json.dumps(log_entry, cls=EnhancedJSONEncoder, separators=(",", ":"))
         else:
@@ -68,7 +81,11 @@ class StructuredFormatter(logging.Formatter):
 class CSVFormatter(logging.Formatter):
     """CSV formatter for structured logging with enhanced serialization"""
 
-    def __init__(self, config: Optional[LoggerConfig] = None, serialization_config: Optional[SerializationConfig] = None):
+    def __init__(
+        self,
+        config: Optional[LoggerConfig] = None,
+        serialization_config: Optional[SerializationConfig] = None,
+    ):
         super().__init__()
         self.config = config or get_default_config()
         self.serialization_config = serialization_config or SerializationConfig()
@@ -97,7 +114,9 @@ class CSVFormatter(logging.Formatter):
                 serialized = serialize_for_logging(value, self.serialization_config)
                 # Convert to string representation for CSV compatibility
                 if isinstance(serialized, (dict, list)):
-                    context_items[context_key] = json.dumps(serialized, separators=(',', ':'))
+                    context_items[context_key] = json.dumps(
+                        serialized, separators=(",", ":")
+                    )
                 else:
                     context_items[context_key] = str(serialized)
 
@@ -124,7 +143,11 @@ class CSVFormatter(logging.Formatter):
 class PlainTextFormatter(logging.Formatter):
     """Plain text formatter for structured logging with enhanced serialization"""
 
-    def __init__(self, config: Optional[LoggerConfig] = None, serialization_config: Optional[SerializationConfig] = None):
+    def __init__(
+        self,
+        config: Optional[LoggerConfig] = None,
+        serialization_config: Optional[SerializationConfig] = None,
+    ):
         super().__init__()
         self.config = config or get_default_config()
         self.serialization_config = serialization_config or SerializationConfig()
@@ -149,7 +172,7 @@ class PlainTextFormatter(logging.Formatter):
                 serialized = serialize_for_logging(value, self.serialization_config)
                 # Convert to compact string representation
                 if isinstance(serialized, (dict, list)):
-                    value_str = json.dumps(serialized, separators=(',', ':'))
+                    value_str = json.dumps(serialized, separators=(",", ":"))
                     # Truncate very long values for readability
                     if len(value_str) > 100:
                         value_str = value_str[:97] + "..."
