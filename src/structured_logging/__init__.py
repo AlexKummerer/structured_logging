@@ -4,7 +4,7 @@ Structured Logging Library
 A flexible Python library for structured JSON logging with context management.
 """
 
-__version__ = "0.2.0"
+__version__ = "0.3.0"
 
 from .config import LoggerConfig, get_default_config, set_default_config, FormatterType
 from .context import (
