@@ -74,6 +74,15 @@ from .logger import (
     log_with_context,
     reset_filter_metrics,
 )
+from .network_handlers import (
+    HTTPConfig,
+    HTTPHandler,
+    NetworkHandlerConfig,
+    SocketConfig,
+    SocketHandler,
+    SyslogConfig,
+    SyslogHandler,
+)
 
 __all__ = [
     # Sync API
@@ -114,6 +123,14 @@ __all__ = [
     "create_fastapi_logger_config",
     "create_flask_logger_config",
     "FlaskLoggingMiddleware",
+    # Network handlers
+    "NetworkHandlerConfig",
+    "SyslogConfig", 
+    "SyslogHandler",
+    "HTTPConfig",
+    "HTTPHandler", 
+    "SocketConfig",
+    "SocketHandler",
     # Async API
     "AsyncLoggerConfig",
     "get_default_async_config",

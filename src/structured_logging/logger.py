@@ -39,18 +39,41 @@ def get_logger(name: str, config: Optional[LoggerConfig] = None) -> logging.Logg
             formatter = _formatter_cache[cache_key]
 
         # Add console handler if required
-        if config.output_type in ["console", "both"]:
+        if "console" in config.output_type:
             console_handler = logging.StreamHandler(sys.stdout)
             console_handler.setFormatter(formatter)
             logger.addHandler(console_handler)
 
         # Add file handler if required
-        if config.output_type in ["file", "both"] and config.file_config:
+        if "file" in config.output_type and config.file_config:
             from .handlers import RotatingFileHandler
 
             file_handler = RotatingFileHandler(config.file_config)
             file_handler.setFormatter(formatter)
             logger.addHandler(file_handler)
+
+        # Add network handler if required
+        if "network" in config.output_type and config.network_config:
+            from .network_handlers import HTTPHandler, SocketHandler, SyslogHandler
+
+            # Determine handler type based on config
+            if hasattr(config.network_config, 'facility'):  # SyslogConfig
+                network_handler = SyslogHandler(config.network_config)
+            elif hasattr(config.network_config, 'url'):  # HTTPConfig
+                network_handler = HTTPHandler(config.network_config)
+            elif hasattr(config.network_config, 'protocol'):  # SocketConfig
+                network_handler = SocketHandler(config.network_config)
+            else:
+                # Default to syslog
+                from .network_handlers import SyslogConfig
+                syslog_config = SyslogConfig(
+                    host=config.network_config.host,
+                    port=config.network_config.port
+                )
+                network_handler = SyslogHandler(syslog_config)
+
+            network_handler.setFormatter(formatter)
+            logger.addHandler(network_handler)
 
         logger.propagate = True
 
