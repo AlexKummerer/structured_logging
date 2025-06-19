@@ -6,7 +6,7 @@ A flexible Python library for structured JSON logging with context management an
 
 __version__ = "0.4.0"
 
-from .config import LoggerConfig, get_default_config, set_default_config, FormatterType
+from .config import LoggerConfig, get_default_config, set_default_config, FormatterType, OutputType
 from .context import (
     get_custom_context,
     get_request_id,
@@ -18,7 +18,22 @@ from .context import (
     update_custom_context,
 )
 from .formatter import StructuredFormatter, CSVFormatter, PlainTextFormatter
-from .logger import get_logger, log_with_context
+from .logger import get_logger, log_with_context, get_filter_metrics, reset_filter_metrics
+from .filtering import (
+    FilterConfig, 
+    FilterEngine, 
+    LevelFilter, 
+    ContextFilter, 
+    CustomFilter, 
+    SamplingFilter, 
+    FilterResult
+)
+from .handlers import (
+    FileHandlerConfig,
+    RotatingFileHandler,
+    TimedRotatingFileHandler,
+    create_file_logger
+)
 
 # Async logging support
 from .async_config import (
@@ -45,7 +60,8 @@ from .async_logger import (
 __all__ = [
     # Sync API
     "LoggerConfig",
-    "FormatterType", 
+    "FormatterType",
+    "OutputType",
     "get_default_config",
     "set_default_config",
     "request_context",
@@ -61,6 +77,19 @@ __all__ = [
     "PlainTextFormatter",
     "get_logger",
     "log_with_context",
+    "get_filter_metrics",
+    "reset_filter_metrics",
+    "FilterConfig",
+    "FilterEngine",
+    "LevelFilter",
+    "ContextFilter",
+    "CustomFilter",
+    "SamplingFilter",
+    "FilterResult",
+    "FileHandlerConfig",
+    "RotatingFileHandler",
+    "TimedRotatingFileHandler",
+    "create_file_logger",
     
     # Async API
     "AsyncLoggerConfig",
