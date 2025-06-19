@@ -5,11 +5,14 @@ A flexible Python library for structured JSON logging with context management an
 ## Features
 
 - **JSON Structured Logging**: All logs are formatted as JSON for easy parsing and analysis
+- **Async Logging Support**: High-performance non-blocking async logging with queue-based processing
 - **Context Management**: Automatic injection of request IDs, user context, and custom fields
+- **Multiple Output Formats**: JSON, CSV, and Plain Text formatters
 - **Flexible Configuration**: Environment-based configuration with sensible defaults
 - **Multi-tenant Support**: Built-in support for user_id and tenant_id fields
 - **Custom Context Fields**: Add any custom fields to your log entries
-- **Thread-safe**: Uses Python's contextvars for proper context isolation
+- **Thread-safe & Async-safe**: Uses Python's contextvars for proper context isolation
+- **High Performance**: Optimized for high-throughput logging scenarios
 
 ## Installation
 
@@ -76,6 +79,33 @@ logger.info("Plain text log")
 Output (Plain text format):
 ```
 [2024-01-15T10:30:00.000Z] INFO my_app Plain text log (request_id=f47ac10b-58cc-4372-a567-0e02b2c3d479, user_id=user123, tenant_id=tenant456)
+```
+
+### Async Logging
+
+```python
+import asyncio
+from structured_logging import get_async_logger, async_request_context
+
+async def main():
+    # Create async logger
+    async_logger = get_async_logger("async_app")
+    
+    async with async_request_context(user_id="user123"):
+        await async_logger.ainfo("Async operation started")
+        await asyncio.sleep(0.1)  # Simulate async work
+        await async_logger.ainfo("Async operation completed")
+    
+    # Ensure all logs are flushed
+    await async_logger.flush()
+
+asyncio.run(main())
+```
+
+Output:
+```json
+{"timestamp": "2024-01-15T10:30:00.000Z", "level": "INFO", "logger": "async_app", "message": "Async operation started", "request_id": "f47ac10b-58cc-4372-a567-0e02b2c3d479", "user_id": "user123"}
+{"timestamp": "2024-01-15T10:30:00.000Z", "level": "INFO", "logger": "async_app", "message": "Async operation completed", "request_id": "f47ac10b-58cc-4372-a567-0e02b2c3d479", "user_id": "user123"}
 ```
 
 ### With Custom Context

@@ -38,8 +38,8 @@
 
 #### Phase 1: Beta (0.x.x)
 - **0.1.0** ✅ Initial Release (aktuell)
-- **0.2.0** 🔄 Zusätzliche Formatter (CSV, Plain Text)
-- **0.3.0** 🔄 Performance Optimierungen
+- **0.2.0** ✅ Zusätzliche Formatter (CSV, Plain Text)
+- **0.3.0** ✅ Performance Optimierungen
 - **0.4.0** 🔄 Advanced Context Features
 
 #### Phase 2: Stable (1.x.x)
