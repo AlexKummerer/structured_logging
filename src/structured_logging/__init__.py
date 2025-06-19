@@ -34,6 +34,14 @@ from .handlers import (
     TimedRotatingFileHandler,
     create_file_logger
 )
+from .integrations import (
+    FastAPILoggingConfig,
+    FastAPILoggingMiddleware,
+    add_structured_logging,
+    create_fastapi_logger_config,
+    create_flask_logger_config,
+    FlaskLoggingMiddleware
+)
 
 # Async logging support
 from .async_config import (
@@ -90,6 +98,12 @@ __all__ = [
     "RotatingFileHandler",
     "TimedRotatingFileHandler",
     "create_file_logger",
+    "FastAPILoggingConfig",
+    "FastAPILoggingMiddleware", 
+    "add_structured_logging",
+    "create_fastapi_logger_config",
+    "create_flask_logger_config",
+    "FlaskLoggingMiddleware",
     
     # Async API
     "AsyncLoggerConfig",
