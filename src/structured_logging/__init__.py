@@ -83,6 +83,14 @@ from .network_handlers import (
     SyslogConfig,
     SyslogHandler,
 )
+from .serializers import (
+    EnhancedJSONEncoder,
+    SerializationConfig,
+    TypeRegistry,
+    enhanced_json_dumps,
+    register_custom_serializer,
+    serialize_for_logging,
+)
 
 __all__ = [
     # Sync API
@@ -131,6 +139,13 @@ __all__ = [
     "HTTPHandler", 
     "SocketConfig",
     "SocketHandler",
+    # Enhanced serialization
+    "SerializationConfig",
+    "TypeRegistry",
+    "EnhancedJSONEncoder",
+    "enhanced_json_dumps",
+    "register_custom_serializer",
+    "serialize_for_logging",
     # Async API
     "AsyncLoggerConfig",
     "get_default_async_config",
