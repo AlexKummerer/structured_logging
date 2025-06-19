@@ -6,6 +6,7 @@ that works seamlessly with asyncio and existing sync context system.
 """
 
 import asyncio
+import uuid
 from contextlib import asynccontextmanager
 from typing import Any, AsyncGenerator, Dict, Optional
 
@@ -53,8 +54,6 @@ async def async_request_context(
             set_request_id(request_id)
         elif request_id is None:
             # Always generate new request ID for new context
-            import uuid
-
             set_request_id(str(uuid.uuid4()))
 
         # Set user context if provided

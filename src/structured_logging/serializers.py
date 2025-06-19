@@ -5,18 +5,19 @@ This module provides custom serializers that extend JSON functionality
 to handle Python objects that aren't natively JSON serializable.
 """
 
+import inspect
 import json
 import logging
+import re
+import sys
+import time
 from dataclasses import asdict, is_dataclass
-from datetime import date, datetime, time, timedelta
+from datetime import date, datetime, timedelta
 from decimal import Decimal
 from enum import Enum
 from pathlib import Path, PurePath
 from typing import Any, Callable, Dict, List, Optional, Set, Type, Union, get_type_hints, get_origin, get_args
 from uuid import UUID
-import re
-import inspect
-import sys
 
 # Optional imports for scientific libraries
 try:
@@ -1333,7 +1334,6 @@ class SchemaValidator:
         Raises:
             ValidationError: If validation fails
         """
-        import time
         start_time = time.perf_counter()
         
         try:
@@ -1390,7 +1390,6 @@ class SchemaValidator:
                 errors.append(f"Field '{field_name}' must be at most {constraints['max_length']} characters")
             
             if "pattern" in constraints:
-                import re
                 if not re.match(constraints["pattern"], value):
                     errors.append(f"Field '{field_name}' does not match required pattern")
         

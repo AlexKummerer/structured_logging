@@ -1,6 +1,6 @@
 # Programming Guidelines
 
-This document outlines the coding standards and best practices for this Python FastAPI project.
+This document outlines the coding standards and best practices for the Structured Logging Python library project.
 
 ## Core Principles
 
@@ -32,47 +32,91 @@ This document outlines the coding standards and best practices for this Python F
 
 ```python
 # Good - under 20 lines, single responsibility
-def validate_character_data(character_data: dict) -> None:
-    if not character_data.get("name"):
-        raise ValueError("Character name is required")
+def validate_log_data(data: dict, schema: str) -> None:
+    if not data.get("level"):
+        raise ValidationError("Log level is required")
     
-    if not character_data.get("role"):
-        raise ValueError("Character role is required")
+    if not data.get("message"):
+        raise ValidationError("Log message is required")
     
-    if character_data.get("age") and character_data["age"] < 0:
-        raise ValueError("Age cannot be negative")
+    if data.get("timestamp") and not isinstance(data["timestamp"], datetime):
+        raise ValidationError("Timestamp must be datetime object")
 
 # Bad - too long, multiple responsibilities
-def create_character_with_validation_and_logging(character_data):
-    # 30+ lines of mixed validation, creation, and logging logic
+def create_logger_with_validation_and_serialization(config):
+    # 30+ lines of mixed validation, creation, and serialization logic
 ```
 
 ## Code Structure
 
 ### 1. Modularität (Modular Design)
 - Organize code into logical modules and packages
-- Use dependency injection for testability
 - Keep related functionality together
 - Separate concerns into different layers:
-  - **Routes** (`app.py`): HTTP request/response handling
-  - **Services** (`services/`): Business logic
-  - **Models** (`models/`): Data structures and ORM
-  - **Auth** (`auth/`): Authentication and authorization
-  - **Database** (`db/`): Database configuration
+  - **Core** (`logger.py`, `context.py`): Main logging functionality
+  - **Configuration** (`config.py`): Configuration management
+  - **Formatters** (`formatter.py`): Output formatting (JSON, CSV, plain text)
+  - **Serializers** (`serializers.py`): Data serialization and validation
+  - **Handlers** (`handlers.py`, `network_handlers.py`): Output destinations
+  - **Integrations** (`integrations.py`): Framework integrations (FastAPI, Flask)
+  - **Filtering** (`filtering.py`): Log filtering and sampling
 
-### 2. Import Organization
+### 2. Import Organization - CRITICAL RULE
+**ALL IMPORTS MUST BE GLOBAL AND AT THE TOP OF THE FILE**
+
 ```python
-# Standard library imports
-import os
-from typing import List, Optional
+# Standard library imports (alphabetically ordered)
+import json
+import logging
+import re
+import sys
+import time
+from dataclasses import dataclass
+from datetime import datetime, timedelta
+from pathlib import Path
+from typing import Any, Dict, List, Optional, Union
 
-# Third-party imports
-from fastapi import Depends, HTTPException
-from sqlalchemy.orm import Session
+# Third-party imports (alphabetically ordered)
+import numpy as np
+import pandas as pd
+import pytest
 
-# Local imports
-from models.character import Character
-from services.character_service import CharacterService
+# Local imports (alphabetically ordered by module)
+from .config import LoggerConfig, SerializationConfig
+from .context import get_request_id, set_user_context
+from .formatter import StructuredFormatter
+from .serializers import serialize_for_logging, ValidationError
+```
+
+**NEVER use local imports inside functions:**
+```python
+# BAD - local imports inside functions
+def serialize_numpy_array(array):
+    import numpy as np  # NEVER DO THIS
+    return array.tolist()
+
+# GOOD - global imports at top
+import numpy as np
+
+def serialize_numpy_array(array):
+    return array.tolist()
+```
+
+**Exception handling for optional imports:**
+```python
+# For optional dependencies, use try/catch at module level only
+try:
+    import numpy as np
+    HAS_NUMPY = True
+except ImportError:
+    np = None
+    HAS_NUMPY = False
+
+# Then use the flag in functions
+def serialize_array(array):
+    if not HAS_NUMPY:
+        return str(array)
+    return array.tolist()
 ```
 
 ### 3. Error Handling
@@ -84,12 +128,13 @@ from services.character_service import CharacterService
 ```python
 # Good
 try:
-    character = character_service.get_character_by_id(character_id)
-    if not character:
-        raise HTTPException(status_code=404, detail="Character not found")
-    return character
-except ValueError as e:
-    raise HTTPException(status_code=400, detail=str(e))
+    serialized_data = serialize_for_logging(complex_object)
+    if not serialized_data:
+        raise SerializationError("Failed to serialize object")
+    return serialized_data
+except ValidationError as e:
+    logger.error("Validation failed", error=str(e), object_type=type(complex_object).__name__)
+    raise
 
 # Bad
 try:
@@ -109,24 +154,31 @@ except:
 
 ### 2. Test Organization
 ```python
-# tests/test_character_service.py
+# tests/test_serializers.py
 import pytest
-from services.character_service import CharacterService
+from structured_logging.serializers import serialize_for_logging, ValidationError
 
-class TestCharacterService:
-    def test_get_character_by_id_success(self):
+class TestSerializers:
+    def test_serialize_datetime_success(self):
         # Arrange
-        service = CharacterService([])
+        from datetime import datetime
+        test_datetime = datetime(2024, 1, 15, 10, 30, 0)
         
         # Act
-        result = service.get_character_by_id(1)
+        result = serialize_for_logging(test_datetime)
         
         # Assert
-        assert result is not None
+        assert isinstance(result, str)
+        assert "2024-01-15" in result
 
-    def test_get_character_by_id_not_found(self):
+    def test_serialize_invalid_object_error(self):
         # Test error scenario
-        pass
+        class UnserializableClass:
+            def __repr__(self):
+                raise Exception("Cannot serialize")
+        
+        with pytest.raises(Exception):
+            serialize_for_logging(UnserializableClass())
 ```
 
 ### 3. Mocking and Fixtures
@@ -134,26 +186,20 @@ class TestCharacterService:
 - Mock external dependencies
 - Keep tests isolated and independent
 
-## Structured Logging
+## Structured Logging Library Specific Guidelines
 
-### 1. Logging Configuration
+### 1. Library Usage Patterns
 ```python
-import logging
-import structlog
+from structured_logging import get_logger, log_with_context, request_context
 
-# Configure structured logging
-structlog.configure(
-    processors=[
-        structlog.processors.TimeStamper(fmt="ISO"),
-        structlog.processors.add_log_level,
-        structlog.processors.JSONRenderer()
-    ],
-    wrapper_class=structlog.make_filtering_bound_logger(logging.INFO),
-    logger_factory=structlog.PrintLoggerFactory(),
-    cache_logger_on_first_use=True,
-)
+# Configure logger
+logger = get_logger("my_app")
 
-logger = structlog.get_logger()
+# Use context management
+with request_context(request_id="req_123", user_id="user_456"):
+    log_with_context(logger, "info", "Processing request", 
+                    operation="create_user", 
+                    data={"email": "user@example.com"})
 ```
 
 ### 2. Logging Best Practices
@@ -161,16 +207,24 @@ logger = structlog.get_logger()
 - Include relevant context in log messages
 - Log important business events
 - Don't log sensitive information (passwords, tokens)
+- Use lazy serialization for complex objects
 
 ```python
-# Good - structured logging with context
-logger.info("Character created", 
-           character_id=character.id, 
-           character_name=character.name,
-           user_id=current_user.id)
+# Good - structured logging with context and lazy serialization
+from structured_logging import create_lazy_serializable
+
+complex_data = create_lazy_serializable({
+    "user_profile": large_user_object,
+    "transaction_data": expensive_calculation()
+})
+
+log_with_context(logger, "info", "Transaction processed", 
+                transaction_id=transaction.id, 
+                user_id=transaction.user_id,
+                details=complex_data)  # Only serialized if log is actually written
 
 # Bad - unstructured logging
-print(f"Character {character.name} created")
+print(f"Transaction {transaction.id} processed")
 ```
 
 ### 3. Log Levels Usage
@@ -188,12 +242,13 @@ print(f"Character {character.name} created")
 - Use `List`, `Dict` for collections
 
 ```python
-from typing import List, Optional
+from typing import Any, Dict, List, Optional
+from structured_logging.serializers import ValidationError
 
-def get_characters(limit: int = 20, skip: int = 0) -> List[Character]:
+def serialize_for_logging(obj: Any, config: Optional[SerializationConfig] = None) -> Any:
     pass
 
-def get_character_by_id(character_id: int) -> Optional[Character]:
+def validate_log_data(data: Dict[str, Any], schema_name: str) -> bool:
     pass
 ```
 
@@ -204,19 +259,20 @@ def get_character_by_id(character_id: int) -> Optional[Character]:
 - Document exceptions that may be raised
 
 ```python
-def update_character(self, character_id: int, updated_data: dict) -> Optional[Character]:
+def serialize_for_logging(obj: Any, config: Optional[SerializationConfig] = None) -> Any:
     """
-    Updates an existing character with new data.
+    Serialize an object for structured logging with enhanced type support.
 
     Args:
-        character_id: The ID of the character to update
-        updated_data: Dictionary containing the fields to update
+        obj: The object to serialize (can be any Python type)
+        config: Optional serialization configuration for customizing behavior
 
     Returns:
-        The updated character or None if not found
+        JSON-serializable representation of the object
 
     Raises:
-        ValueError: If the updated_data contains invalid values
+        SerializationError: If the object cannot be serialized
+        ValidationError: If schema validation is enabled and fails
     """
 ```
 
@@ -327,12 +383,12 @@ disallow_untyped_defs = true
 
 ```python
 # Good
-character_service = CharacterService()
-user_authentication_token = generate_token()
+serialization_config = SerializationConfig()
+lazy_serialization_manager = LazySerializationManager()
 
 # Bad
-cs = CharacterService()
-token = gen_tok()
+ser_cfg = SerializationConfig()
+lazy_mgr = LazySerializationManager()
 ```
 
 ### 2. Classes
@@ -341,14 +397,14 @@ token = gen_tok()
 
 ```python
 # Good
-class CharacterService:
+class StructuredFormatter:
     pass
 
-class DatabaseConnection:
+class LazySerializationManager:
     pass
 
 # Bad
-class char_svc:
+class struct_fmt:
     pass
 ```
 
@@ -358,58 +414,165 @@ class char_svc:
 
 ```python
 # Good
-SECRET_KEY = "supersecretkey"
-MAX_CHARACTER_NAME_LENGTH = 100
+DEFAULT_LOG_LEVEL = "INFO"
+MAX_SERIALIZATION_DEPTH = 10
+LAZY_THRESHOLD_BYTES = 1000
 
 # Bad
-secret_key = "supersecretkey"
+default_log_level = "INFO"
+max_depth = 10
 ```
 
 ## Performance Guidelines
 
-### 1. Database Queries
-- Use appropriate indexes
-- Avoid N+1 query problems
-- Use pagination for large result sets
-- Close database connections properly
+### 1. Serialization Performance
+- Use lazy serialization for complex objects
+- Configure appropriate thresholds for lazy activation
+- Cache serialization results when possible
+- Avoid deep recursion in object traversal
 
 ### 2. Memory Usage
-- Don't load all data into memory at once
-- Use generators for large datasets
+- Don't serialize all log data immediately
+- Use lazy evaluation for expensive operations
 - Clean up resources in finally blocks or use context managers
+- Monitor lazy serialization statistics for optimization
+
+```python
+# Good - lazy serialization for performance
+from structured_logging import create_lazy_serializable
+
+def process_large_dataset(data):
+    # Only serialize if log actually gets written
+    lazy_data = create_lazy_serializable(data)
+    logger.info("Processing dataset", data_summary=lazy_data)
+
+# Bad - immediate serialization
+def process_large_dataset(data):
+    # Always serializes, even if log is filtered
+    serialized_data = serialize_for_logging(data)
+    logger.info("Processing dataset", data_summary=serialized_data)
+```
 
 ## Security Guidelines
 
-### 1. Input Validation
-- Validate all input data
-- Use Pydantic models for request validation
-- Sanitize data before database operations
+### 1. Data Sanitization
+- Never log sensitive information (passwords, tokens, API keys)
+- Use schema validation to ensure data integrity
+- Sanitize user input before logging
+- Implement data masking for sensitive fields
 
-### 2. Authentication & Authorization
-- Never store passwords in plain text
-- Use secure JWT secret keys
-- Implement proper role-based access control
-- Validate JWT tokens on protected endpoints
+### 2. Serialization Security
+- Validate objects before serialization
+- Prevent serialization of unsafe object types
+- Use secure defaults for serialization configuration
+- Implement size limits to prevent DoS attacks
 
 ### 3. Error Messages
-- Don't expose internal system details in error messages
-- Log detailed errors internally
-- Return generic error messages to users
+- Don't expose internal system details in log messages
+- Sanitize error messages that might contain sensitive data
+- Use structured error logging for internal debugging
+
+```python
+# Good - sanitized logging
+logger.info("User authentication failed", 
+           user_id=user.id,
+           ip_address=request.remote_addr,
+           # No password or sensitive data
+           )
+
+# Bad - exposing sensitive data
+logger.info("User authentication failed", 
+           username=user.username,
+           password=user.password,  # NEVER LOG PASSWORDS
+           api_key=user.api_key     # NEVER LOG KEYS
+           )
+```
+
+## Import Guidelines - CRITICAL RULES
+
+### ⚠️ ABSOLUTE REQUIREMENTS ⚠️
+
+1. **ALL imports MUST be at the top of the file**
+2. **NO local imports inside functions (except for optional dependency handling)**
+3. **Imports MUST be grouped and alphabetically sorted**
+
+### Import Order:
+```python
+# 1. Standard library imports (alphabetical)
+import json
+import logging
+import sys
+import time
+from datetime import datetime
+from pathlib import Path
+from typing import Any, Dict, List, Optional
+
+# 2. Third-party imports (alphabetical)
+import numpy as np
+import pandas as pd
+import pytest
+
+# 3. Local/relative imports (alphabetical)
+from .config import LoggerConfig
+from .context import get_request_id
+from .serializers import serialize_for_logging
+```
+
+### Optional Dependencies Pattern:
+```python
+# At module top level only
+try:
+    import numpy as np
+    HAS_NUMPY = True
+except ImportError:
+    np = None
+    HAS_NUMPY = False
+
+# Use in functions
+def serialize_array(array):
+    if not HAS_NUMPY:
+        return str(array)
+    return array.tolist()
+```
+
+### ❌ VIOLATIONS - NEVER DO THIS:
+```python
+def bad_function():
+    import json  # NEVER - import inside function
+    import time  # NEVER - import inside function
+    from datetime import datetime  # NEVER - import inside function
+```
+
+### ✅ CORRECT PATTERN:
+```python
+import json
+import time
+from datetime import datetime
+
+def good_function():
+    # Use already imported modules
+    result = json.dumps({"timestamp": datetime.now()})
+```
 
 ## Summary Checklist
 
 Before committing code, ensure:
+- [ ] **ALL imports are at the top of the file (CRITICAL)**
+- [ ] **NO local imports inside functions (CRITICAL)**
+- [ ] **Imports are grouped and alphabetically sorted (CRITICAL)**
 - [ ] Files are under 250 lines
 - [ ] Functions are under 20 lines
 - [ ] All functions have type hints
 - [ ] Code follows SRP principle
 - [ ] Error handling is implemented
-- [ ] Logging is structured and meaningful
+- [ ] Structured logging guidelines followed
+- [ ] Lazy serialization used for complex objects
+- [ ] Schema validation implemented where appropriate
 - [ ] Tests are written for new functionality
 - [ ] Code is formatted with black: `black .`
 - [ ] Code passes ruff linting: `ruff check .`
 - [ ] Code passes type checking: `mypy .`
-- [ ] No sensitive information is exposed
+- [ ] No sensitive information is exposed in logs
 
 ## Development Workflow Commands
 

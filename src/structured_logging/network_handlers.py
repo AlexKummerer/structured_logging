@@ -2,6 +2,7 @@
 Network logging handlers for remote logging capabilities
 """
 
+import base64
 import json
 import logging
 import socket
@@ -404,7 +405,6 @@ class HTTPHandler(BaseNetworkHandler):
         elif self.http_config.auth_type == "api_key" and self.http_config.api_key:
             self.auth_headers[self.http_config.api_key_header] = self.http_config.api_key
         elif self.http_config.auth_type == "basic" and self.http_config.username:
-            import base64
             credentials = f"{self.http_config.username}:{self.http_config.password or ''}"
             encoded = base64.b64encode(credentials.encode()).decode()
             self.auth_headers["Authorization"] = f"Basic {encoded}"
