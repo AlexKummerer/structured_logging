@@ -25,7 +25,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Security
 - Nothing yet
 
-## [0.3.0] - 2024-12-19
+## [0.3.0] - 2025-06-19
 
 ### Added
 - **Performance Optimizations**: Significant throughput improvements across all operations
