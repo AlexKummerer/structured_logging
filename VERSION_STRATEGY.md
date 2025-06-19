@@ -37,16 +37,21 @@
 ### Version Timeline Planung
 
 #### Phase 1: Beta (0.x.x)
-- **0.1.0** ✅ Initial Release (aktuell)
-- **0.2.0** ✅ Zusätzliche Formatter (CSV, Plain Text)
+- **0.1.0** ✅ Initial Release - Basic structured logging
+- **0.2.0** ✅ Multiple Formatters (CSV, Plain Text)
 - **0.3.0** ✅ Performance Optimierungen
-- **0.4.0** 🔄 Advanced Context Features
+- **0.4.0** ✅ Async Logger Support
+- **0.5.0** 🔄 Advanced Features & Integrations
+- **0.6.0** 🎯 Framework Integrations
+- **0.7.0** 🎯 Cloud & Enterprise Features
+- **0.8.0** 🎯 Monitoring & Observability
+- **0.9.0** 🎯 Production Hardening
 
 #### Phase 2: Stable (1.x.x)
-- **1.0.0** 🎯 Production Ready
-- **1.1.0** 🔄 Async Logger Support
+- **1.0.0** 🎯 Production Ready - Stable API
+- **1.1.0** 🔄 Enhanced Integrations
 - **1.2.0** 🔄 Plugin System
-- **1.3.0** 🔄 Metrics Integration
+- **1.3.0** 🔄 Advanced Analytics
 
 #### Phase 3: Enterprise (2.x.x)
 - **2.0.0** 🔄 Breaking Changes für Enterprise Features

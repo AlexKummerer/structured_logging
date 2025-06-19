@@ -283,6 +283,25 @@ logger = get_logger("high_perf", config)  # Reuse this logger
 - **Optimized context access**: Minimal context variable lookups
 - **Lazy evaluation**: Expensive operations only when needed
 
+## Roadmap
+
+### 🚀 **Current Version: 0.4.0** 
+- ✅ Complete async logging support
+- ✅ High-performance queue-based processing
+- ✅ 40,153+ logs/second concurrent throughput
+
+### 🎯 **Next: Version 0.5.0** (In Development)
+- 🔄 **Log Filtering & Sampling**: Smart filtering for production performance
+- 🔄 **FastAPI Integration**: One-line middleware for web apps
+- 🔄 **File Handlers**: Rotating files with compression
+- 🔄 **Network Handlers**: Remote logging capabilities
+
+### 📈 **Future Versions**
+- **0.6.0**: Enhanced framework integrations (Flask, Django)
+- **0.7.0**: Cloud platform integrations (AWS, GCP, Azure)
+- **0.8.0**: Monitoring and observability features
+- **1.0.0**: Production-ready stable API
+
 ## Version Strategy
 
 This library follows [Semantic Versioning](https://semver.org/) and supports the latest Python versions:

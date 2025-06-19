@@ -25,6 +25,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Security
 - Nothing yet
 
+## [0.5.0] - TBD (In Planning)
+
+### Planned Features
+- **Log Filtering & Sampling**: Smart filtering and rate-limiting for high-volume logs
+- **FastAPI Integration**: One-line middleware for automatic request/response logging
+- **File Handler**: Rotating file handler with compression and archiving
+- **Network Handlers**: Send logs to remote systems (syslog, HTTP endpoints)
+- **Enhanced Data Types**: Support for complex data structures and validation
+
+### Goals
+- Maintain >50,000 logs/second performance with filtering enabled
+- Framework integrations for major Python web frameworks
+- Production-ready file and network output handlers
+- Advanced filtering and sampling capabilities
+
 ## [0.4.0] - 2025-06-19
 
 ### Added
