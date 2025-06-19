@@ -6,7 +6,7 @@ from typing import Any, Dict, Optional
 
 from .config import LoggerConfig, get_default_config
 from .performance import fast_timestamp
-from .serializers import SerializationConfig, serialize_for_logging
+from .serializers import SerializationConfig, serialize_for_logging, serialize_for_logging_lazy_aware, LazySerializable, LazyDict
 
 
 class StructuredFormatter(logging.Formatter):
@@ -29,14 +29,40 @@ class StructuredFormatter(logging.Formatter):
         if self.config.include_timestamp:
             log_entry["timestamp"] = fast_timestamp()
 
-        # Enhanced context extraction with serialization support
+        # Enhanced context extraction with lazy serialization support
         for key, value in record.__dict__.items():
             if key.startswith("ctx_"):
                 context_key = key[4:]  # Remove ctx_ prefix
-                # Use enhanced serialization for complex types
-                log_entry[context_key] = serialize_for_logging(value, self.serialization_config)
+                # Use lazy-aware serialization for complex types
+                log_entry[context_key] = serialize_for_logging_lazy_aware(value, self.serialization_config)
 
-        return json.dumps(log_entry, separators=(",", ":"))
+        # Handle lazy objects in JSON encoding
+        return self._serialize_to_json(log_entry)
+
+    def _serialize_to_json(self, log_entry: Dict[str, Any]) -> str:
+        """
+        Serialize log entry to JSON, handling lazy objects appropriately
+        
+        Args:
+            log_entry: Dictionary containing log data with potential lazy objects
+            
+        Returns:
+            JSON string representation
+        """
+        # Check if we have any lazy objects that need special handling
+        has_lazy_objects = any(
+            isinstance(value, (LazySerializable, LazyDict))
+            for value in log_entry.values()
+        )
+        
+        if has_lazy_objects:
+            # Use custom encoder that knows how to handle lazy objects
+            from .serializers import EnhancedJSONEncoder
+            encoder = EnhancedJSONEncoder(config=self.serialization_config)
+            return json.dumps(log_entry, cls=EnhancedJSONEncoder, separators=(",", ":"))
+        else:
+            # Fast path for non-lazy objects
+            return json.dumps(log_entry, separators=(",", ":"))
 
 
 class CSVFormatter(logging.Formatter):

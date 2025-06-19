@@ -85,13 +85,21 @@ from .network_handlers import (
 )
 from .serializers import (
     EnhancedJSONEncoder,
+    LazyDict,
+    LazySerializable,
+    LazySerializationManager,
     SerializationConfig,
     SmartConverter,
     TypeDetector,
     TypeRegistry,
+    create_lazy_serializable,
     enhanced_json_dumps,
+    get_lazy_serialization_stats,
     register_custom_serializer,
+    reset_lazy_serialization_stats,
     serialize_for_logging,
+    serialize_for_logging_lazy_aware,
+    should_use_lazy_serialization,
 )
 
 __all__ = [
@@ -150,6 +158,15 @@ __all__ = [
     "enhanced_json_dumps",
     "register_custom_serializer",
     "serialize_for_logging",
+    "serialize_for_logging_lazy_aware",
+    # Lazy serialization
+    "LazySerializable",
+    "LazyDict",
+    "LazySerializationManager",
+    "create_lazy_serializable",
+    "should_use_lazy_serialization",
+    "get_lazy_serialization_stats",
+    "reset_lazy_serialization_stats",
     # Async API
     "AsyncLoggerConfig",
     "get_default_async_config",

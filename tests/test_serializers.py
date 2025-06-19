@@ -15,13 +15,21 @@ import pytest
 from structured_logging.serializers import (
     DEFAULT_CONFIG,
     EnhancedJSONEncoder,
+    LazyDict,
+    LazySerializable,
+    LazySerializationManager,
     SerializationConfig,
     SmartConverter,
     TypeDetector,
     TypeRegistry,
+    create_lazy_serializable,
     enhanced_json_dumps,
+    get_lazy_serialization_stats,
     register_custom_serializer,
+    reset_lazy_serialization_stats,
     serialize_for_logging,
+    serialize_for_logging_lazy_aware,
+    should_use_lazy_serialization,
 )
 
 
@@ -1063,3 +1071,407 @@ class TestTypeDetectionConfiguration:
         
         stats2 = detector.get_cache_stats()
         assert stats2["cache_size"] <= 2  # Should not exceed configured size
+
+
+class TestLazySerializable:
+    """Tests for LazySerializable class"""
+    
+    def test_lazy_wrapper_creation(self):
+        """Test creating lazy serializable wrappers"""
+        data = {"key": "value", "number": 42}
+        lazy_obj = LazySerializable(data)
+        
+        assert not lazy_obj.is_serialized()
+        assert lazy_obj.get_original() is data
+        assert "pending=True" in repr(lazy_obj)
+    
+    def test_lazy_serialization_trigger(self):
+        """Test that serialization is triggered when needed"""
+        data = {"key": "value", "number": 42}
+        lazy_obj = LazySerializable(data)
+        
+        # First access should trigger serialization
+        result = lazy_obj.force_serialize()
+        assert lazy_obj.is_serialized()
+        assert result == data  # Simple data should be unchanged
+        assert "serialized=" in repr(lazy_obj)
+        
+        # Second access should use cached result
+        result2 = lazy_obj.force_serialize()
+        assert result2 == result
+    
+    def test_lazy_string_conversion(self):
+        """Test string conversion triggers serialization"""
+        data = [1, 2, 3]
+        lazy_obj = LazySerializable(data)
+        
+        str_result = str(lazy_obj)
+        assert lazy_obj.is_serialized()
+        assert str_result == str(data)
+    
+    def test_lazy_json_conversion(self):
+        """Test JSON conversion triggers serialization"""
+        data = {"test": True, "value": 123}
+        lazy_obj = LazySerializable(data)
+        
+        json_result = lazy_obj.to_json()
+        assert lazy_obj.is_serialized()
+        parsed = json.loads(json_result)
+        assert parsed == data
+    
+    def test_lazy_complex_object_serialization(self):
+        """Test lazy serialization with complex objects"""
+        from datetime import datetime
+        
+        data = {
+            "timestamp": datetime(2024, 1, 15, 10, 30, 0),
+            "uuid": UUID("f47ac10b-58cc-4372-a567-0e02b2c3d479"),
+            "amount": Decimal("99.99")
+        }
+        
+        config = SerializationConfig(auto_detect_types=False)  # Disable for predictable results
+        lazy_obj = LazySerializable(data, config)
+        
+        result = lazy_obj.force_serialize()
+        
+        # Should have serialized the complex objects
+        assert isinstance(result, dict)
+        assert isinstance(result["timestamp"], str)
+        assert isinstance(result["uuid"], str)
+        assert isinstance(result["amount"], str)
+
+
+class TestLazyDict:
+    """Tests for LazyDict class"""
+    
+    def test_lazy_dict_creation(self):
+        """Test creating lazy dictionaries"""
+        lazy_dict = LazyDict()
+        assert isinstance(lazy_dict, dict)
+        assert len(lazy_dict) == 0
+        
+        # Create with initial data
+        data = {"key": "value"}
+        lazy_dict2 = LazyDict(data)
+        assert lazy_dict2["key"] == "value"
+    
+    def test_lazy_dict_with_lazy_values(self):
+        """Test LazyDict containing LazySerializable values"""
+        complex_data = {"nested": {"deep": "value"}}
+        lazy_value = LazySerializable(complex_data)
+        
+        lazy_dict = LazyDict()
+        lazy_dict["lazy_item"] = lazy_value
+        lazy_dict["regular_item"] = "normal_value"
+        
+        # Values should not be serialized yet
+        assert not lazy_value.is_serialized()
+        
+        # Force serialization
+        result = lazy_dict.force_serialize_all()
+        
+        assert "lazy_item" in result
+        assert "regular_item" in result
+        assert result["lazy_item"] == complex_data
+        assert result["regular_item"] == "normal_value"
+        assert lazy_value.is_serialized()
+    
+    def test_lazy_dict_nested_structures(self):
+        """Test LazyDict with nested lazy structures"""
+        nested_data = [1, 2, 3, {"inner": "value"}]
+        lazy_nested = LazySerializable(nested_data)
+        
+        lazy_dict = LazyDict({
+            "items": [lazy_nested, "regular_string"],
+            "metadata": LazyDict({"config": LazySerializable({"setting": True})})
+        })
+        
+        result = lazy_dict.force_serialize_all()
+        
+        assert result["items"][0] == nested_data
+        assert result["items"][1] == "regular_string"
+        assert result["metadata"]["config"] == {"setting": True}
+    
+    def test_lazy_dict_json_conversion(self):
+        """Test LazyDict JSON conversion"""
+        lazy_dict = LazyDict({
+            "lazy": LazySerializable({"complex": "data"}),
+            "simple": "value"
+        })
+        
+        json_str = lazy_dict.to_json()
+        parsed = json.loads(json_str)
+        
+        assert parsed["lazy"] == {"complex": "data"}
+        assert parsed["simple"] == "value"
+
+
+class TestLazySerializationManager:
+    """Tests for LazySerializationManager"""
+    
+    def test_manager_should_use_lazy_decisions(self):
+        """Test the manager's decisions on when to use lazy serialization"""
+        manager = LazySerializationManager()
+        
+        # Small strings should not use lazy (unless detection is forced)
+        config_no_force = SerializationConfig(force_lazy_for_detection=False)
+        assert not manager.should_use_lazy("short", config_no_force)
+        
+        # Large strings should use lazy
+        large_string = "x" * 2000
+        assert manager.should_use_lazy(large_string, SerializationConfig())
+        
+        # Large collections should use lazy
+        large_list = list(range(50))
+        config_large_threshold = SerializationConfig(lazy_threshold_items=10)
+        assert manager.should_use_lazy(large_list, config_large_threshold)
+        
+        # Small collections should not use lazy
+        small_list = [1, 2, 3]
+        assert not manager.should_use_lazy(small_list, config_large_threshold)
+    
+    def test_manager_lazy_disabled(self):
+        """Test manager with lazy serialization disabled"""
+        manager = LazySerializationManager()
+        config = SerializationConfig(enable_lazy_serialization=False)
+        
+        # Even large objects should not use lazy when disabled
+        large_string = "x" * 2000
+        assert not manager.should_use_lazy(large_string, config)
+        
+        large_dict = {f"key_{i}": f"value_{i}" for i in range(50)}
+        assert not manager.should_use_lazy(large_dict, config)
+    
+    def test_manager_statistics_tracking(self):
+        """Test statistics tracking in the manager"""
+        manager = LazySerializationManager()
+        
+        # Reset to clean state
+        manager.reset_stats()
+        stats = manager.get_stats()
+        assert stats["objects_created"] == 0
+        
+        # Create some lazy objects
+        manager.create_lazy({"data": "test1"})
+        manager.create_lazy({"data": "test2"})
+        
+        stats = manager.get_stats()
+        assert stats["objects_created"] == 2
+        assert stats["efficiency_percent"] == 0  # Nothing skipped yet
+    
+    def test_manager_wrap_if_beneficial(self):
+        """Test the wrap_if_beneficial method"""
+        manager = LazySerializationManager()
+        
+        # Should wrap large objects (exceeds item threshold)
+        large_data = {f"key_{i}": f"value_{i}" for i in range(15)}  # 15 items > 10 threshold
+        result = manager.wrap_if_beneficial(large_data)
+        assert isinstance(result, LazySerializable)
+        
+        # Should not wrap small primitives
+        small_data = "short"
+        config = SerializationConfig(force_lazy_for_detection=False)
+        result = manager.wrap_if_beneficial(small_data, config)
+        assert result == small_data
+        assert not isinstance(result, LazySerializable)
+
+
+class TestLazySerializationIntegration:
+    """Integration tests for lazy serialization"""
+    
+    def test_serialize_for_logging_lazy_aware(self):
+        """Test the lazy-aware serialization function"""
+        # Create data that exceeds the item threshold
+        large_data = {f"key_{i}": f"value_{i}" for i in range(15)}  # 15 items > 10 threshold
+        
+        # With lazy enabled
+        config_lazy = SerializationConfig(enable_lazy_serialization=True)
+        result_lazy = serialize_for_logging_lazy_aware(large_data, config_lazy)
+        assert isinstance(result_lazy, LazySerializable)
+        
+        # With lazy disabled
+        config_no_lazy = SerializationConfig(enable_lazy_serialization=False)
+        result_no_lazy = serialize_for_logging_lazy_aware(large_data, config_no_lazy)
+        assert not isinstance(result_no_lazy, LazySerializable)
+        assert isinstance(result_no_lazy, dict)
+    
+    def test_should_use_lazy_serialization_function(self):
+        """Test the global should_use_lazy_serialization function"""
+        # Large object should use lazy (exceeds item threshold)
+        large_obj = {f"data_{i}": f"value_{i}" for i in range(15)}  # 15 items > 10 threshold
+        assert should_use_lazy_serialization(large_obj)
+        
+        # Small object should not use lazy (unless forced)
+        small_obj = {"data": "small"}
+        config = SerializationConfig(force_lazy_for_detection=False)
+        assert not should_use_lazy_serialization(small_obj, config)
+    
+    def test_create_lazy_serializable_function(self):
+        """Test the global create_lazy_serializable function"""
+        data = {"test": "data"}
+        lazy_obj = create_lazy_serializable(data)
+        
+        assert isinstance(lazy_obj, LazySerializable)
+        assert lazy_obj.get_original() is data
+        assert not lazy_obj.is_serialized()
+    
+    def test_lazy_serialization_stats_functions(self):
+        """Test the global statistics functions"""
+        # Reset stats
+        reset_lazy_serialization_stats()
+        stats = get_lazy_serialization_stats()
+        assert stats["objects_created"] == 0
+        
+        # Create some lazy objects
+        create_lazy_serializable({"data1": "test"})
+        create_lazy_serializable({"data2": "test"})
+        
+        stats = get_lazy_serialization_stats()
+        assert stats["objects_created"] == 2
+
+
+class TestLazySerializationPerformance:
+    """Performance tests for lazy serialization"""
+    
+    def test_lazy_serialization_performance_benefit(self):
+        """Test that lazy serialization provides performance benefits"""
+        import time
+        
+        # Create complex data that would be expensive to serialize
+        complex_data = {
+            f"key_{i}": {
+                "timestamp": datetime.now(),
+                "uuid": uuid4(),
+                "amount": Decimal(f"{i}.99"),
+                "nested": {"deep": f"value_{i}" * 100}
+            }
+            for i in range(100)
+        }
+        
+        iterations = 50
+        
+        # Test immediate serialization
+        start_time = time.perf_counter()
+        for _ in range(iterations):
+            result = serialize_for_logging_lazy_aware(complex_data, use_lazy=False)
+        immediate_time = time.perf_counter() - start_time
+        
+        # Test lazy serialization (without forcing)
+        start_time = time.perf_counter()
+        lazy_objects = []
+        for _ in range(iterations):
+            lazy_obj = serialize_for_logging_lazy_aware(complex_data, use_lazy=True)
+            lazy_objects.append(lazy_obj)
+        lazy_time = time.perf_counter() - start_time
+        
+        # Lazy should be significantly faster when not forced to serialize
+        assert lazy_time < immediate_time
+        
+        # Verify the lazy objects work correctly
+        assert all(isinstance(obj, LazySerializable) for obj in lazy_objects)
+        
+        # Force one to serialize and verify it works
+        serialized = lazy_objects[0].force_serialize()
+        assert isinstance(serialized, dict)
+        assert len(serialized) == 100
+    
+    def test_lazy_vs_immediate_with_filtering(self):
+        """Test lazy serialization benefit when logs are filtered"""
+        # This simulates the case where expensive serialization would be wasted
+        # because the log entry gets filtered out
+        
+        expensive_data = {
+            "large_nested_structure": {
+                f"item_{i}": {
+                    "timestamp": datetime.now(),
+                    "data": "x" * 1000,
+                    "uuid": uuid4()
+                }
+                for i in range(100)
+            }
+        }
+        
+        # Create lazy wrapper
+        lazy_obj = create_lazy_serializable(expensive_data)
+        
+        # Simulate filter rejecting the log entry
+        # In real scenario, the lazy object would be garbage collected
+        # without ever being serialized
+        
+        assert not lazy_obj.is_serialized()  # Never needed to serialize
+        
+        # Now simulate the log being accepted and needing serialization
+        result = lazy_obj.force_serialize()
+        assert lazy_obj.is_serialized()
+        assert isinstance(result, dict)
+        assert "large_nested_structure" in result
+
+
+class TestLazySerializationEdgeCases:
+    """Edge case tests for lazy serialization"""
+    
+    def test_lazy_object_equality(self):
+        """Test equality comparison for lazy objects"""
+        data1 = {"test": "data"}
+        data2 = {"test": "data"}  # Different object, same content
+        
+        lazy1 = LazySerializable(data1)
+        lazy2 = LazySerializable(data2)
+        
+        # Different instances with different data objects should not be equal (identity-based)
+        assert lazy1 != lazy2
+        
+        # Same instance should be equal to itself
+        assert lazy1 == lazy1
+    
+    def test_lazy_object_hashing(self):
+        """Test hashing support for lazy objects"""
+        data = {"test": "data"}
+        lazy_obj = LazySerializable(data)
+        
+        # Should be hashable
+        hash_value = hash(lazy_obj)
+        assert isinstance(hash_value, int)
+        
+        # Should be consistent
+        assert hash(lazy_obj) == hash_value
+        
+        # Should work in sets/dicts
+        lazy_set = {lazy_obj}
+        assert lazy_obj in lazy_set
+    
+    def test_lazy_serialization_error_handling(self):
+        """Test error handling in lazy serialization"""
+        
+        # Create an object that will cause serialization errors
+        class ProblematicClass:
+            def __repr__(self):
+                raise Exception("Cannot serialize this!")
+        
+        problematic_obj = ProblematicClass()
+        lazy_obj = LazySerializable(problematic_obj)
+        
+        # Should handle serialization errors gracefully
+        result = lazy_obj.force_serialize()
+        
+        # Should get fallback representation
+        assert isinstance(result, dict)
+        assert "__unserializable__" in result or "__serialization_error__" in result
+    
+    def test_lazy_dict_error_handling(self):
+        """Test error handling in LazyDict"""
+        problematic_lazy = LazySerializable(object())  # Will fail serialization
+        
+        lazy_dict = LazyDict({
+            "good": "value",
+            "bad": problematic_lazy
+        })
+        
+        # Should handle errors in individual items
+        result = lazy_dict.force_serialize_all()
+        
+        assert "good" in result
+        assert result["good"] == "value"
+        assert "bad" in result
+        # Bad item should have error representation
+        assert isinstance(result["bad"], dict)
