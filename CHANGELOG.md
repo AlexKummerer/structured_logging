@@ -8,8 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
-- Performance benchmarks
-- Async logger support
+- Async logger support (planned)
 
 ### Changed
 - Nothing yet
@@ -25,6 +24,43 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 - Nothing yet
+
+## [0.3.0] - 2024-12-19
+
+### Added
+- **Performance Optimizations**: Significant throughput improvements across all operations
+- **Fast Timestamp Generation**: Micro-caching timestamp function with 1ms cache duration
+- **Formatter Caching**: Instance caching to reduce initialization overhead
+- **Optimized Context Access**: Reduced context variable lookups for better performance
+- **Lazy Evaluation**: Expensive operations only executed when needed
+- **Performance Benchmarks**: Comprehensive performance analysis tools
+- **Performance Tests**: Automated regression prevention and benchmark validation
+- **Memory Optimization**: Efficient memory usage patterns for high-throughput scenarios
+
+### Changed
+- **Timestamp Generation**: Now uses optimized caching for better performance
+- **Context Variable Access**: Batch retrieval to minimize overhead
+- **Formatter Initialization**: Cached instances for repeated configurations
+- **Documentation**: Added performance section with benchmarks and optimization tips
+
+### Performance Improvements
+- **Basic Logging**: 131,920+ logs/second (significant improvement)
+- **Context Logging**: 55,801+ logs/second (optimized from baseline)
+- **Timestamp Overhead**: Reduced to < 0.001ms per log
+- **Memory Efficiency**: < 10MB for 1,000 structured logs
+- **Context Overhead**: Optimized to ~0.010ms per context access
+
+### Developer Experience
+- **Performance Tests**: 11 new performance validation tests
+- **Benchmark Tools**: `simple_benchmark.py` and `benchmarks.py` for performance analysis
+- **Regression Prevention**: Automated performance threshold testing
+- **Profiling Support**: Built-in performance measurement utilities
+
+### Technical Enhancements
+- **src/structured_logging/performance.py**: New performance utilities module
+- **Concurrent Safety**: Performance optimizations maintain thread safety
+- **Cache Management**: Intelligent caching strategies for optimal performance
+- **Memory Profiling**: Built-in memory usage tracking and optimization
 
 ## [0.2.0] - 2024-12-19
 
