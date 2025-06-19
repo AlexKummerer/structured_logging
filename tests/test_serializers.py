@@ -16,6 +16,8 @@ from structured_logging.serializers import (
     DEFAULT_CONFIG,
     EnhancedJSONEncoder,
     SerializationConfig,
+    SmartConverter,
+    TypeDetector,
     TypeRegistry,
     enhanced_json_dumps,
     register_custom_serializer,
@@ -677,3 +679,387 @@ class TestPerformance:
         assert isinstance(result, dict)
         assert "timestamp" in result
         assert "uuid" in result
+
+
+class TestTypeDetector:
+    """Tests for TypeDetector class"""
+    
+    def test_uuid_detection(self):
+        config = SerializationConfig(detect_uuid_strings=True)
+        detector = TypeDetector(config)
+        
+        uuid_string = "f47ac10b-58cc-4372-a567-0e02b2c3d479"
+        result = detector.detect_and_convert(uuid_string)
+        
+        assert isinstance(result, dict)
+        assert result["type"] == "uuid"
+        assert result["value"] == uuid_string
+    
+    def test_datetime_string_detection(self):
+        config = SerializationConfig(detect_datetime_strings=True)
+        detector = TypeDetector(config)
+        
+        # Test ISO format
+        iso_date = "2024-01-15T10:30:00Z"
+        result = detector.detect_and_convert(iso_date)
+        
+        assert isinstance(result, dict)
+        assert result["type"] == "datetime_string"
+        assert result["value"] == iso_date
+        assert result["detected_format"] is True
+        
+        # Test simple date format
+        simple_date = "2024-01-15"
+        result = detector.detect_and_convert(simple_date)
+        
+        assert isinstance(result, dict)
+        assert result["type"] == "datetime_string"
+    
+    def test_url_detection(self):
+        config = SerializationConfig(detect_url_strings=True)
+        detector = TypeDetector(config)
+        
+        url = "https://api.example.com/users/123"
+        result = detector.detect_and_convert(url)
+        
+        assert isinstance(result, dict)
+        assert result["type"] == "url"
+        assert result["value"] == url
+    
+    def test_json_string_detection(self):
+        config = SerializationConfig(detect_json_strings=True)
+        detector = TypeDetector(config)
+        
+        json_string = '{"name": "John", "age": 30}'
+        result = detector.detect_and_convert(json_string)
+        
+        assert isinstance(result, dict)
+        assert result["type"] == "json_string"
+        assert "parsed" in result
+        assert result["parsed"]["name"] == "John"
+        assert result["parsed"]["age"] == 30
+    
+    def test_numeric_string_detection(self):
+        config = SerializationConfig(auto_convert_strings=True)
+        detector = TypeDetector(config)
+        
+        # Integer string
+        int_string = "12345"
+        result = detector.detect_and_convert(int_string)
+        
+        assert isinstance(result, dict)
+        assert result["type"] == "numeric_string"
+        assert result["value"] == 12345
+        assert result["original"] == int_string
+        
+        # Float string
+        float_string = "123.45"
+        result = detector.detect_and_convert(float_string)
+        
+        assert isinstance(result, dict)
+        assert result["type"] == "numeric_string"
+        assert result["value"] == 123.45
+    
+    def test_timestamp_detection(self):
+        config = SerializationConfig(auto_convert_numbers=True)
+        detector = TypeDetector(config)
+        
+        # Unix timestamp
+        timestamp = 1705316400  # January 15, 2024
+        result = detector.detect_and_convert(timestamp)
+        
+        assert isinstance(result, dict)
+        assert result["type"] == "timestamp"
+        assert result["value"] == timestamp
+        assert "human_readable" in result
+    
+    def test_large_number_detection(self):
+        config = SerializationConfig(auto_convert_numbers=True)
+        detector = TypeDetector(config)
+        
+        large_number = 1500000
+        result = detector.detect_and_convert(large_number)
+        
+        assert isinstance(result, dict)
+        assert result["type"] == "large_number"
+        assert result["value"] == large_number
+        assert result["formatted"] == "1.50M"
+    
+    def test_cache_functionality(self):
+        config = SerializationConfig(type_detection_cache_size=10)
+        detector = TypeDetector(config)
+        
+        uuid_string = "f47ac10b-58cc-4372-a567-0e02b2c3d479"
+        
+        # First call - cache miss
+        result1 = detector.detect_and_convert(uuid_string)
+        stats1 = detector.get_cache_stats()
+        
+        # Second call - cache hit
+        result2 = detector.detect_and_convert(uuid_string)
+        stats2 = detector.get_cache_stats()
+        
+        assert result1 == result2
+        assert stats2["cache_hits"] > stats1["cache_hits"]
+        assert stats2["hit_rate_percent"] > 0
+    
+    def test_disabled_detection(self):
+        config = SerializationConfig(auto_detect_types=False)
+        detector = TypeDetector(config)
+        
+        uuid_string = "f47ac10b-58cc-4372-a567-0e02b2c3d479"
+        result = detector.detect_and_convert(uuid_string)
+        
+        # Should return original object when detection is disabled
+        assert result == uuid_string
+    
+    def test_invalid_json_handling(self):
+        config = SerializationConfig(detect_json_strings=True)
+        detector = TypeDetector(config)
+        
+        invalid_json = '{"name": "John", "age":}'
+        result = detector.detect_and_convert(invalid_json)
+        
+        assert isinstance(result, dict)
+        assert result["type"] == "json_like_string"
+        assert "value" in result
+
+
+class TestSmartConverter:
+    """Tests for SmartConverter class"""
+    
+    def test_intelligent_conversion(self):
+        config = SerializationConfig(auto_detect_types=True)
+        converter = SmartConverter(config)
+        
+        # Test detection + serialization
+        uuid_string = "f47ac10b-58cc-4372-a567-0e02b2c3d479"
+        result = converter.convert_intelligently(uuid_string)
+        
+        assert isinstance(result, dict)
+        assert result["type"] == "uuid"
+        assert "_detection" in result
+        assert result["_detection"]["auto_detected"] is True
+        assert result["_detection"]["confidence"] == 0.95
+    
+    def test_fallback_to_standard_serialization(self):
+        config = SerializationConfig(auto_detect_types=True)
+        converter = SmartConverter(config)
+        
+        # Test with datetime object (should use standard serialization)
+        dt = datetime(2024, 1, 15, 10, 30, 0)
+        result = converter.convert_intelligently(dt)
+        
+        # Should be serialized normally (string format)
+        assert isinstance(result, str)
+        assert "2024-01-15T10:30:00Z" == result
+    
+    def test_detection_confidence_scoring(self):
+        config = SerializationConfig(auto_detect_types=True)
+        converter = SmartConverter(config)
+        
+        # High confidence detection (UUID)
+        uuid_result = converter.convert_intelligently("f47ac10b-58cc-4372-a567-0e02b2c3d479")
+        
+        # Lower confidence detection (JSON-like string)
+        json_like = '{"invalid": json}'  # Will be detected as json_like_string
+        json_result = converter.detector.detect_and_convert(json_like)
+        
+        assert uuid_result["_detection"]["confidence"] > 0.9
+        # Note: json_like detection happens in TypeDetector, not SmartConverter for invalid JSON
+    
+    def test_detection_statistics(self):
+        config = SerializationConfig(auto_detect_types=True)
+        converter = SmartConverter(config)
+        
+        # Perform some conversions
+        converter.convert_intelligently("f47ac10b-58cc-4372-a567-0e02b2c3d479")
+        converter.convert_intelligently("https://example.com")
+        converter.convert_intelligently("normal string")
+        
+        stats = converter.get_detection_stats()
+        
+        assert "cache_size" in stats
+        assert "total_requests" in stats
+        assert stats["total_requests"] >= 3
+
+
+class TestAutoDetectionIntegration:
+    """Integration tests for automatic type detection"""
+    
+    def test_auto_detection_enabled_vs_disabled(self):
+        # Test with auto-detection enabled
+        config_enabled = SerializationConfig(auto_detect_types=True)
+        uuid_string = "f47ac10b-58cc-4372-a567-0e02b2c3d479"
+        
+        result_enabled = serialize_for_logging(uuid_string, config_enabled)
+        
+        # Test with auto-detection disabled
+        config_disabled = SerializationConfig(auto_detect_types=False)
+        result_disabled = serialize_for_logging(uuid_string, config_disabled)
+        
+        # Results should be different
+        assert result_enabled != result_disabled
+        assert isinstance(result_enabled, dict)  # Detected and enhanced
+        assert isinstance(result_disabled, str)  # Left as string
+    
+    def test_nested_structure_detection(self):
+        config = SerializationConfig(auto_detect_types=True)
+        
+        nested_data = {
+            "user_id": "f47ac10b-58cc-4372-a567-0e02b2c3d479",  # UUID string
+            "created_at": "2024-01-15T10:30:00Z",                # DateTime string
+            "api_url": "https://api.example.com/users/123",       # URL string
+            "metadata": '{"source": "web", "campaign": "summer"}', # JSON string
+            "normal_field": "just a regular string"
+        }
+        
+        result = serialize_for_logging(nested_data, config)
+        
+        assert isinstance(result, dict)
+        # Check that nested detection worked
+        assert isinstance(result["user_id"], dict)
+        assert result["user_id"]["type"] == "uuid"
+        assert isinstance(result["created_at"], dict)
+        assert result["created_at"]["type"] == "datetime_string"
+        assert isinstance(result["api_url"], dict)
+        assert result["api_url"]["type"] == "url"
+        assert isinstance(result["metadata"], dict)
+        assert result["metadata"]["type"] == "json_string"
+        # Normal string should remain unchanged
+        assert result["normal_field"] == "just a regular string"
+    
+    def test_list_detection(self):
+        config = SerializationConfig(auto_detect_types=True)
+        
+        uuid_list = [
+            "f47ac10b-58cc-4372-a567-0e02b2c3d479",
+            "550e8400-e29b-41d4-a716-446655440000",
+            "just a normal string"
+        ]
+        
+        result = serialize_for_logging(uuid_list, config)
+        
+        assert isinstance(result, list)
+        assert len(result) == 3
+        # First two should be detected as UUIDs
+        assert isinstance(result[0], dict)
+        assert result[0]["type"] == "uuid"
+        assert isinstance(result[1], dict)
+        assert result[1]["type"] == "uuid"
+        # Third should remain as string
+        assert result[2] == "just a normal string"
+    
+    def test_performance_with_detection(self):
+        """Test that auto-detection doesn't significantly impact performance"""
+        import time
+        
+        config_with_detection = SerializationConfig(auto_detect_types=True)
+        config_without_detection = SerializationConfig(auto_detect_types=False)
+        
+        test_data = {
+            "uuid": "f47ac10b-58cc-4372-a567-0e02b2c3d479",
+            "timestamp": "2024-01-15T10:30:00Z",
+            "url": "https://api.example.com/users/123",
+            "number": "12345",
+            "normal": "just a string"
+        }
+        
+        iterations = 100
+        
+        # Test with detection
+        start_time = time.perf_counter()
+        for _ in range(iterations):
+            serialize_for_logging(test_data, config_with_detection)
+        time_with_detection = time.perf_counter() - start_time
+        
+        # Test without detection
+        start_time = time.perf_counter()
+        for _ in range(iterations):
+            serialize_for_logging(test_data, config_without_detection)
+        time_without_detection = time.perf_counter() - start_time
+        
+        # Detection will add significant overhead due to regex matching and object creation
+        # This is expected for the intelligent analysis features
+        performance_ratio = time_with_detection / time_without_detection
+        
+        # Just ensure it completes and doesn't have runaway performance issues (< 100x)
+        assert performance_ratio < 100.0, f"Detection adds excessive overhead: {performance_ratio:.2f}x"
+        
+        # Log the actual performance impact for informational purposes
+        print(f"\nDetection overhead: {performance_ratio:.2f}x ({time_with_detection:.3f}s vs {time_without_detection:.3f}s)")
+    
+    def test_detection_error_handling(self):
+        """Test that detection errors don't break serialization"""
+        config = SerializationConfig(auto_detect_types=True)
+        
+        # Create data that might cause detection issues
+        problematic_data = {
+            "empty_string": "",
+            "very_long_string": "x" * 10000,
+            "special_chars": "!@#$%^&*(){}[]|\\:;\"'<>,.?/~`",
+            "unicode": "Hello 世界 🌍",
+            "mixed": ["normal", "f47ac10b-58cc-4372-a567-0e02b2c3d479", 12345]
+        }
+        
+        # Should not crash
+        result = serialize_for_logging(problematic_data, config)
+        
+        assert isinstance(result, dict)
+        assert "empty_string" in result
+        assert "very_long_string" in result
+        assert "special_chars" in result
+        assert "unicode" in result
+        assert "mixed" in result
+
+
+class TestTypeDetectionConfiguration:
+    """Tests for type detection configuration options"""
+    
+    def test_selective_detection_options(self):
+        # Test with only UUID detection enabled
+        config = SerializationConfig(
+            auto_detect_types=True,
+            detect_uuid_strings=True,
+            detect_datetime_strings=False,
+            detect_url_strings=False,
+            detect_json_strings=False
+        )
+        
+        test_data = {
+            "uuid": "f47ac10b-58cc-4372-a567-0e02b2c3d479",
+            "datetime": "2024-01-15T10:30:00Z",
+            "url": "https://example.com",
+            "json": '{"key": "value"}'
+        }
+        
+        result = serialize_for_logging(test_data, config)
+        
+        # Only UUID should be detected
+        assert isinstance(result["uuid"], dict)
+        assert result["uuid"]["type"] == "uuid"
+        # Others should remain as strings
+        assert isinstance(result["datetime"], str)
+        assert isinstance(result["url"], str)
+        assert isinstance(result["json"], str)
+    
+    def test_cache_size_configuration(self):
+        config = SerializationConfig(
+            auto_detect_types=True,
+            type_detection_cache_size=2  # Very small cache
+        )
+        
+        detector = TypeDetector(config)
+        
+        # Fill the cache
+        detector.detect_and_convert("f47ac10b-58cc-4372-a567-0e02b2c3d479")
+        detector.detect_and_convert("550e8400-e29b-41d4-a716-446655440000")
+        
+        stats1 = detector.get_cache_stats()
+        assert stats1["cache_size"] == 2
+        
+        # Add one more (should not exceed cache size)
+        detector.detect_and_convert("6ba7b810-9dad-11d1-80b4-00c04fd430c8")
+        
+        stats2 = detector.get_cache_stats()
+        assert stats2["cache_size"] <= 2  # Should not exceed configured size

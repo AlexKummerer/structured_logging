@@ -86,6 +86,8 @@ from .network_handlers import (
 from .serializers import (
     EnhancedJSONEncoder,
     SerializationConfig,
+    SmartConverter,
+    TypeDetector,
     TypeRegistry,
     enhanced_json_dumps,
     register_custom_serializer,
@@ -142,6 +144,8 @@ __all__ = [
     # Enhanced serialization
     "SerializationConfig",
     "TypeRegistry",
+    "TypeDetector",
+    "SmartConverter",
     "EnhancedJSONEncoder",
     "enhanced_json_dumps",
     "register_custom_serializer",
