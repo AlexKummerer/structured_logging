@@ -44,9 +44,38 @@ with request_context(user_id="user123", tenant_id="tenant456"):
     logger.info("User logged in successfully")
 ```
 
-Output:
+Output (JSON format):
 ```json
 {"timestamp": "2024-01-15T10:30:00.000Z", "level": "INFO", "logger": "my_app", "message": "User logged in successfully", "request_id": "f47ac10b-58cc-4372-a567-0e02b2c3d479", "user_id": "user123", "tenant_id": "tenant456"}
+```
+
+### Multiple Output Formats
+
+```python
+from structured_logging import get_logger, LoggerConfig
+
+# CSV Format
+config = LoggerConfig(formatter_type="csv")
+logger = get_logger("my_app", config)
+logger.info("CSV formatted log")
+```
+
+Output (CSV format):
+```csv
+timestamp,level,logger,message,request_id,user_id,tenant_id
+2024-01-15T10:30:00.000Z,INFO,my_app,CSV formatted log,f47ac10b-58cc-4372-a567-0e02b2c3d479,user123,tenant456
+```
+
+```python
+# Plain Text Format  
+config = LoggerConfig(formatter_type="plain")
+logger = get_logger("my_app", config)
+logger.info("Plain text log")
+```
+
+Output (Plain text format):
+```
+[2024-01-15T10:30:00.000Z] INFO my_app Plain text log (request_id=f47ac10b-58cc-4372-a567-0e02b2c3d479, user_id=user123, tenant_id=tenant456)
 ```
 
 ### With Custom Context
@@ -78,6 +107,7 @@ Output:
 
 ```bash
 STRUCTURED_LOG_LEVEL=DEBUG
+STRUCTURED_LOG_FORMATTER=json          # json, csv, or plain
 STRUCTURED_LOG_TIMESTAMP=true
 STRUCTURED_LOG_REQUEST_ID=true
 STRUCTURED_LOG_USER_CONTEXT=true
@@ -90,6 +120,7 @@ from structured_logging import LoggerConfig, set_default_config
 
 config = LoggerConfig(
     log_level="DEBUG",
+    formatter_type="csv",              # json, csv, or plain
     include_timestamp=True,
     include_request_id=True,
     include_user_context=True
@@ -123,8 +154,17 @@ update_custom_context(service="auth", environment="production")
 ```python
 from structured_logging import get_logger, LoggerConfig
 
-config = LoggerConfig(log_level="WARNING", include_timestamp=False)
+# Critical logger with plain text format
+config = LoggerConfig(
+    log_level="WARNING", 
+    formatter_type="plain", 
+    include_timestamp=False
+)
 logger = get_logger("critical_logger", config)
+
+# CSV logger for data analysis
+csv_config = LoggerConfig(formatter_type="csv")
+data_logger = get_logger("data_logger", csv_config)
 ```
 
 ## API Reference

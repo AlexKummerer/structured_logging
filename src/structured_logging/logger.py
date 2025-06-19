@@ -4,7 +4,7 @@ from typing import Any, Dict, Optional
 
 from .config import LoggerConfig, get_default_config
 from .context import get_custom_context, get_request_id, get_user_context
-from .formatter import StructuredFormatter
+from .formatter import StructuredFormatter, CSVFormatter, PlainTextFormatter
 
 
 def get_logger(name: str, config: Optional[LoggerConfig] = None) -> logging.Logger:
@@ -16,7 +16,15 @@ def get_logger(name: str, config: Optional[LoggerConfig] = None) -> logging.Logg
         logger.setLevel(getattr(logging, config.log_level.upper()))
 
         handler = logging.StreamHandler(sys.stdout)
-        formatter = StructuredFormatter(config)
+        
+        # Select formatter based on config
+        if config.formatter_type == "csv":
+            formatter = CSVFormatter(config)
+        elif config.formatter_type == "plain":
+            formatter = PlainTextFormatter(config)
+        else:  # default to json
+            formatter = StructuredFormatter(config)
+            
         handler.setFormatter(formatter)
 
         logger.addHandler(handler)

@@ -1,6 +1,9 @@
 import os
 from dataclasses import dataclass
-from typing import Optional
+from typing import Literal, Optional
+
+
+FormatterType = Literal["json", "csv", "plain"]
 
 
 @dataclass
@@ -11,10 +14,15 @@ class LoggerConfig:
     include_timestamp: bool = True
     include_request_id: bool = True
     include_user_context: bool = True
+    formatter_type: FormatterType = "json"
 
     @classmethod
     def from_env(cls) -> "LoggerConfig":
         """Create configuration from environment variables"""
+        formatter_type = os.getenv("STRUCTURED_LOG_FORMATTER", "json").lower()
+        if formatter_type not in ["json", "csv", "plain"]:
+            formatter_type = "json"
+
         return cls(
             log_level=os.getenv("STRUCTURED_LOG_LEVEL", "INFO"),
             include_timestamp=os.getenv("STRUCTURED_LOG_TIMESTAMP", "true").lower()
@@ -25,6 +33,7 @@ class LoggerConfig:
                 "STRUCTURED_LOG_USER_CONTEXT", "true"
             ).lower()
             == "true",
+            formatter_type=formatter_type,
         )
 
 

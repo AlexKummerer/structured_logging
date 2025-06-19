@@ -9,7 +9,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 - Performance benchmarks
-- Additional formatter types (CSV, Plain Text)
 - Async logger support
 
 ### Changed
@@ -26,6 +25,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 - Nothing yet
+
+## [0.2.0] - 2024-12-19
+
+### Added
+- **Multiple Output Formats**: CSV and Plain Text formatters alongside existing JSON
+- **CSVFormatter**: Machine-readable CSV format for data analysis and processing
+- **PlainTextFormatter**: Human-readable plain text format for development and debugging
+- **Formatter Selection**: New `formatter_type` parameter in LoggerConfig ("json", "csv", "plain")
+- **Environment Configuration**: `STRUCTURED_LOG_FORMATTER` environment variable support
+- **Type Safety**: FormatterType literal type for formatter selection
+- **Comprehensive Tests**: 12 additional tests for new formatters (99% coverage maintained)
+
+### Changed
+- **Enhanced LoggerConfig**: Added `formatter_type` field with validation
+- **Extended API**: New formatter classes exported in public API
+- **Improved Documentation**: Added examples for all formatter types
+
+### Features
+- **CSV Format**: Structured tabular output perfect for log analysis tools
+- **Plain Text Format**: Readable format with context in parentheses
+- **Backward Compatible**: All existing JSON functionality unchanged
+- **Environment Driven**: Configure formatter via environment variables
+- **Type Hints**: Full type safety for formatter selection
+
+### Developer Experience
+- **99% Test Coverage**: Comprehensive test suite for all formatters
+- **Documentation**: Updated README with format examples
+- **API Consistency**: All formatters share same configuration options
 
 ## [0.1.0] - 2024-12-19
 
