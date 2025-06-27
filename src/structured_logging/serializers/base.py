@@ -42,6 +42,70 @@ def serialize_for_logging_lazy_aware(
     return serialize_for_logging(obj, config)
 
 
+def _serialize_with_custom_serializer(obj: Any, config: SerializationConfig) -> Optional[Any]:
+    """Try to serialize object with custom serializer"""
+    serializer = _global_registry.get_serializer(obj)
+    if serializer:
+        try:
+            return serializer(obj, config)
+        except Exception as e:
+            return {
+                "__serialization_error__": str(e),
+                "__type__": type(obj).__name__,
+                "__repr__": repr(obj)[:200],
+            }
+    return None
+
+
+def _serialize_primitive(obj: Any, config: SerializationConfig) -> Any:
+    """Serialize primitive types with type detection"""
+    if config.auto_detect_types:
+        detector = TypeDetector(config)
+        detected = detector.detect_and_convert(obj)
+        if detected != obj:
+            smart_converter = SmartConverter(config)
+            return smart_converter._enhance_detected_object(detected)
+    
+    if isinstance(obj, str) and config.truncate_strings:
+        if len(obj) > config.truncate_strings:
+            return obj[: config.truncate_strings] + "..."
+    return obj
+
+
+def _serialize_collection(obj: Union[list, tuple], config: SerializationConfig) -> list:
+    """Serialize list or tuple with size limits"""
+    result = []
+    for i, item in enumerate(obj):
+        if i >= config.max_collection_size:
+            result.append(f"... ({len(obj) - i} more items)")
+            break
+        result.append(serialize_for_logging(item, config))
+    return result
+
+
+def _serialize_dict(obj: dict, config: SerializationConfig) -> dict:
+    """Serialize dictionary with size limits"""
+    result = {}
+    count = 0
+    for key, value in obj.items():
+        if count >= config.max_collection_size:
+            result["..."] = f"({len(obj) - count} more items)"
+            break
+        str_key = str(key) if not isinstance(key, str) else key
+        result[str_key] = serialize_for_logging(value, config)
+        count += 1
+    return result
+
+
+def _serialize_fallback(obj: Any) -> dict:
+    """Fallback serialization with safe repr"""
+    try:
+        obj_repr = repr(obj)[:200]
+    except Exception as e:
+        obj_repr = f"<repr failed: {str(e)[:50]}>"
+    return {"__unserializable__": type(obj).__name__, "__repr__": obj_repr}
+
+
 def serialize_for_logging(
     obj: Any, config: Optional[SerializationConfig] = None
 ) -> Any:
@@ -60,72 +124,27 @@ def serialize_for_logging(
     """
     config = config or DEFAULT_CONFIG
 
-    # Handle None
     if obj is None:
         return None
 
-    # Check for custom serializers first (including NumPy types)
-    # This must come before primitive checks since NumPy types inherit from Python primitives
-    serializer = _global_registry.get_serializer(obj)
-    if serializer:
-        try:
-            return serializer(obj, config)
-        except Exception as e:
-            # Safe fallback
-            return {
-                "__serialization_error__": str(e),
-                "__type__": type(obj).__name__,
-                "__repr__": repr(obj)[:200],
-            }
+    # Try custom serializers first
+    custom_result = _serialize_with_custom_serializer(obj, config)
+    if custom_result is not None:
+        return custom_result
 
-    # Handle primitives, apply detection if enabled
+    # Handle primitives
     if isinstance(obj, (str, int, float, bool)):
-        if config.auto_detect_types:
-            # Apply detection to primitives
-            detector = TypeDetector(config)
-            detected = detector.detect_and_convert(obj)
-            if detected != obj:
-                # Auto-detection found something, enhance it
-                smart_converter = SmartConverter(config)
-                return smart_converter._enhance_detected_object(detected)
+        return _serialize_primitive(obj, config)
 
-        # Handle string truncation for regular strings
-        if isinstance(obj, str) and config.truncate_strings:
-            if len(obj) > config.truncate_strings:
-                return obj[: config.truncate_strings] + "..."
-        return obj
-
-    # Handle lists and tuples
+    # Handle collections
     if isinstance(obj, (list, tuple)):
-        result = []
-        for i, item in enumerate(obj):
-            if i >= config.max_collection_size:
-                result.append(f"... ({len(obj) - i} more items)")
-                break
-            result.append(serialize_for_logging(item, config))
-        return result
+        return _serialize_collection(obj, config)
 
-    # Handle dictionaries
     if isinstance(obj, dict):
-        result = {}
-        count = 0
-        for key, value in obj.items():
-            if count >= config.max_collection_size:
-                result["..."] = f"({len(obj) - count} more items)"
-                break
-            # Ensure key is string
-            str_key = str(key) if not isinstance(key, str) else key
-            result[str_key] = serialize_for_logging(value, config)
-            count += 1
-        return result
+        return _serialize_dict(obj, config)
 
-    # Final fallback with safe repr
-    try:
-        obj_repr = repr(obj)[:200]
-    except Exception as e:
-        obj_repr = f"<repr failed: {str(e)[:50]}>"
-
-    return {"__unserializable__": type(obj).__name__, "__repr__": obj_repr}
+    # Final fallback
+    return _serialize_fallback(obj)
 
 
 # Update lazy.py references
