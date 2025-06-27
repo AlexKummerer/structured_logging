@@ -1,5 +1,5 @@
 """
-Advanced logging handlers for structured logging
+Enhanced rotating file handler with compression and archiving
 """
 
 import gzip
@@ -8,43 +8,11 @@ import os
 import shutil
 import time
 from concurrent.futures import ThreadPoolExecutor
-from dataclasses import dataclass
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, Optional
 
-
-@dataclass
-class FileHandlerConfig:
-    """Configuration for file-based logging handlers"""
-
-    # Basic file settings
-    filename: str = "app.log"
-    mode: str = "a"
-    encoding: str = "utf-8"
-
-    # Rotation settings
-    max_bytes: int = 10 * 1024 * 1024  # 10MB default
-    backup_count: int = 5
-    rotate_on_startup: bool = False
-
-    # Compression settings
-    compress_rotated: bool = True
-    compression_level: int = 6
-
-    # Archive settings
-    archive_old_logs: bool = True
-    archive_after_days: int = 30
-    archive_directory: Optional[str] = None
-
-    # Performance settings
-    buffer_size: int = 8192
-    flush_interval: float = 5.0  # seconds
-    async_compression: bool = True
-
-    # Cleanup settings
-    delete_archived_after_days: Optional[int] = 365
-    cleanup_on_startup: bool = True
+from .config import FileHandlerConfig
 
 
 class RotatingFileHandler(logging.Handler):
@@ -287,152 +255,3 @@ class RotatingFileHandler(logging.Handler):
             self.executor = None
 
         super().close()
-
-
-class TimedRotatingFileHandler(RotatingFileHandler):
-    """
-    File handler that rotates based on time intervals
-    """
-
-    def __init__(
-        self, config: FileHandlerConfig, when: str = "midnight", interval: int = 1
-    ):
-        """
-        Initialize timed rotating file handler
-
-        Args:
-            config: File handler configuration
-            when: Type of interval ('S', 'M', 'H', 'D', 'midnight', 'W0'-'W6')
-            interval: Number of intervals between rotations
-        """
-        self.when = when.upper()
-        self.interval = interval
-        self.suffix = None
-        self.ext_match = None
-
-        # Set up time-based rotation parameters
-        if self.when == "S":
-            self.interval_seconds = 1
-            self.suffix = "%Y-%m-%d_%H-%M-%S"
-        elif self.when == "M":
-            self.interval_seconds = 60
-            self.suffix = "%Y-%m-%d_%H-%M"
-        elif self.when == "H":
-            self.interval_seconds = 60 * 60
-            self.suffix = "%Y-%m-%d_%H"
-        elif self.when == "D" or self.when == "MIDNIGHT":
-            self.interval_seconds = 60 * 60 * 24
-            self.suffix = "%Y-%m-%d"
-        elif self.when.startswith("W"):
-            self.interval_seconds = 60 * 60 * 24 * 7
-            self.suffix = "%Y-%m-%d"
-        else:
-            raise ValueError(f"Invalid value for 'when': {when}")
-
-        # Calculate next rollover time
-        self.rollover_at = self._compute_rollover_time()
-
-        super().__init__(config)
-
-    def _compute_rollover_time(self) -> float:
-        """Compute the next rollover time"""
-        current_time = int(time.time())
-
-        if self.when == "MIDNIGHT":
-            # Roll over at midnight
-            t = time.localtime(current_time)
-            next_midnight = time.mktime(
-                (t.tm_year, t.tm_mon, t.tm_mday, 0, 0, 0, 0, 0, -1)
-            )
-            next_midnight += 24 * 60 * 60  # Next day midnight
-            return next_midnight
-        else:
-            # Roll over at regular intervals
-            return current_time + (self.interval * self.interval_seconds)
-
-    def _should_rollover(self, record: logging.LogRecord) -> bool:
-        """Determine if rollover should occur based on time"""
-        return time.time() >= self.rollover_at
-
-    def do_rollover(self):
-        """Perform time-based log file rotation"""
-        if self.stream:
-            self.stream.close()
-            self.stream = None
-
-        # Generate timestamped filename
-        t = time.localtime(self.rollover_at - 1)  # Use time just before rollover
-        timestamped_filename = f"{self.base_filename}.{time.strftime(self.suffix, t)}"
-
-        # Move current file to timestamped name
-        if os.path.exists(self.base_filename):
-            if os.path.exists(timestamped_filename):
-                os.remove(timestamped_filename)
-            os.rename(self.base_filename, timestamped_filename)
-
-            # Compress if configured
-            if self.config.compress_rotated:
-                if self.config.async_compression and self.executor:
-                    self.executor.submit(self._compress_file, timestamped_filename)
-                else:
-                    self._compress_file(timestamped_filename)
-
-        # Calculate next rollover time
-        self.rollover_at = self._compute_rollover_time()
-
-        # Archive old logs if configured
-        if self.config.archive_old_logs:
-            if self.config.async_compression and self.executor:
-                self.executor.submit(self._archive_old_logs)
-            else:
-                self._archive_old_logs()
-
-        # Reopen the log file
-        self._open_stream()
-
-
-def create_file_logger(
-    name: str,
-    config: FileHandlerConfig,
-    formatter: Optional[logging.Formatter] = None,
-    handler_type: str = "rotating",
-) -> logging.Logger:
-    """
-    Create a logger with file handler
-
-    Args:
-        name: Logger name
-        config: File handler configuration
-        formatter: Optional custom formatter
-        handler_type: Type of handler ('rotating' or 'timed')
-
-    Returns:
-        Configured logger instance
-    """
-    logger = logging.getLogger(name)
-
-    # Remove existing handlers
-    for handler in logger.handlers[:]:
-        logger.removeHandler(handler)
-
-    # Create appropriate handler
-    if handler_type == "timed":
-        handler = TimedRotatingFileHandler(config)
-    else:
-        handler = RotatingFileHandler(config)
-
-    # Set formatter
-    if formatter:
-        handler.setFormatter(formatter)
-    else:
-        # Use simple default formatter
-        simple_formatter = logging.Formatter(
-            fmt="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-            datefmt="%Y-%m-%d %H:%M:%S",
-        )
-        handler.setFormatter(simple_formatter)
-
-    logger.addHandler(handler)
-    logger.setLevel(logging.DEBUG)
-
-    return logger
