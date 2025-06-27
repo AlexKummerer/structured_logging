@@ -23,22 +23,8 @@ except ImportError:
 from .config import SerializationConfig
 
 
-def serialize_dataframe(df: Any, config: SerializationConfig) -> Dict[str, Any]:
-    """Enhanced Pandas DataFrame serialization with comprehensive features"""
-    if not HAS_PANDAS:
-        return {"error": "Pandas not available"}
-
-    result = {
-        "shape": list(df.shape),
-        "columns": list(df.columns),
-        "__pandas_type__": "DataFrame",
-    }
-
-    # Index information
-    if config.pandas_include_index:
-        result["index_info"] = _serialize_pandas_index(df.index, config)
-
-    # Memory usage information
+def _add_memory_usage_info(df: Any, config: SerializationConfig, result: Dict[str, Any]) -> None:
+    """Add memory usage information to result"""
     if config.pandas_include_memory_usage:
         try:
             memory_usage = df.memory_usage(deep=True)
@@ -50,60 +36,85 @@ def serialize_dataframe(df: Any, config: SerializationConfig) -> Dict[str, Any]:
         except Exception as e:
             result["memory_usage_error"] = str(e)
 
-    # Data types information
+
+def _add_dtype_info(df: Any, config: SerializationConfig, result: Dict[str, Any]) -> None:
+    """Add data type information to result"""
     if config.pandas_include_dtypes:
         result["dtypes"] = {col: str(dtype) for col, dtype in df.dtypes.items()}
-
-        # Categorize column types
         result["column_types"] = _categorize_dataframe_columns(df)
 
-    # Column sampling based on configuration
+
+def _handle_column_sampling(df: Any, config: SerializationConfig, result: Dict[str, Any]) -> Any:
+    """Handle column sampling and return DataFrame for serialization"""
     cols_to_include = _select_columns_for_serialization(df, config)
     if cols_to_include != list(df.columns):
         result["columns_sampled"] = True
         result["columns_included"] = cols_to_include
         result["columns_omitted"] = len(df.columns) - len(cols_to_include)
-        df_for_serialization = df[cols_to_include]
+        return df[cols_to_include]
     else:
         result["columns_sampled"] = False
-        df_for_serialization = df
+        return df
 
-    # Data serialization based on size
-    if (
-        len(df) <= config.pandas_max_rows
-        and len(cols_to_include) <= config.pandas_max_cols
-    ):
-        # Small DataFrames: include full data
+
+def _serialize_dataframe_content(df_for_serialization: Any, cols_to_include: list, config: SerializationConfig, result: Dict[str, Any]) -> None:
+    """Serialize DataFrame content based on size"""
+    if len(df_for_serialization) <= config.pandas_max_rows and len(cols_to_include) <= config.pandas_max_cols:
         result["data"] = _serialize_dataframe_data(df_for_serialization, config)
         result["serialization_method"] = "full"
-
     else:
-        # Large DataFrames: use sampling strategy
         result.update(_serialize_dataframe_sample(df_for_serialization, config))
         result["serialization_method"] = "sampled"
 
-    # Statistical summary for numeric columns
+
+def _add_statistics(df: Any, config: SerializationConfig, result: Dict[str, Any]) -> None:
+    """Add statistical summary for numeric columns"""
     if config.pandas_include_describe and HAS_NUMPY:
         try:
             numeric_cols = df.select_dtypes(include=[np.number]).columns
             if len(numeric_cols) > 0:
                 describe_data = df[numeric_cols].describe()
                 result["statistics"] = {
-                    col: {
-                        stat: float(val) for stat, val in describe_data[col].items()
-                    }
+                    col: {stat: float(val) for stat, val in describe_data[col].items()}
                     for col in numeric_cols
                 }
         except Exception as e:
             result["statistics_error"] = str(e)
 
-    # Handle MultiIndex columns
+
+def _add_multiindex_info(df: Any, config: SerializationConfig, result: Dict[str, Any]) -> None:
+    """Add MultiIndex column information to result"""
     if config.pandas_handle_multiindex and isinstance(df.columns, pd.MultiIndex):
         result["multiindex_columns"] = {
             "levels": [list(level) for level in df.columns.levels],
             "names": list(df.columns.names),
             "nlevels": df.columns.nlevels,
         }
+
+
+def serialize_dataframe(df: Any, config: SerializationConfig) -> Dict[str, Any]:
+    """Enhanced Pandas DataFrame serialization with comprehensive features"""
+    if not HAS_PANDAS:
+        return {"error": "Pandas not available"}
+
+    result = {
+        "shape": list(df.shape),
+        "columns": list(df.columns),
+        "__pandas_type__": "DataFrame",
+    }
+
+    if config.pandas_include_index:
+        result["index_info"] = _serialize_pandas_index(df.index, config)
+
+    _add_memory_usage_info(df, config, result)
+    _add_dtype_info(df, config, result)
+    
+    df_for_serialization = _handle_column_sampling(df, config, result)
+    cols_to_include = result.get("columns_included", list(df.columns))
+    
+    _serialize_dataframe_content(df_for_serialization, cols_to_include, config, result)
+    _add_statistics(df, config, result)
+    _add_multiindex_info(df, config, result)
 
     return result
 
