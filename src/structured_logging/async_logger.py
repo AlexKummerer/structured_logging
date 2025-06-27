@@ -13,6 +13,7 @@ from .async_config import AsyncLoggerConfig, get_default_async_config
 from .async_context import aget_custom_context, aget_request_id, aget_user_context
 from .config import LoggerConfig, get_default_config
 from .formatter import CSVFormatter, PlainTextFormatter, StructuredFormatter
+from .serializers import SerializationConfig, serialize_for_logging
 
 
 @dataclass
@@ -30,55 +31,84 @@ class AsyncLogEntry:
 class AsyncLogProcessor:
     """Background processor for async log entries"""
 
-    def __init__(self, async_config: AsyncLoggerConfig, logger_config: LoggerConfig):
+    def __init__(
+        self,
+        async_config: AsyncLoggerConfig,
+        logger_config: LoggerConfig,
+        serialization_config: Optional[SerializationConfig] = None,
+    ):
         self.async_config = async_config
         self.logger_config = logger_config
+        self.serialization_config = serialization_config or SerializationConfig()
         self.queue: asyncio.Queue = asyncio.Queue(maxsize=async_config.queue_size)
         self.batch: List[AsyncLogEntry] = []
         self.last_flush_time = time.time()
         self.running = False
         self.workers: List[asyncio.Task] = []
+        self._shutdown_event = asyncio.Event()
 
-        # Create formatter
+        # Create formatter with serialization config
         if logger_config.formatter_type == "csv":
-            self.formatter = CSVFormatter(logger_config)
+            self.formatter: Union[
+                CSVFormatter, PlainTextFormatter, StructuredFormatter
+            ] = CSVFormatter(logger_config, self.serialization_config)
         elif logger_config.formatter_type == "plain":
-            self.formatter = PlainTextFormatter(logger_config)
+            self.formatter = PlainTextFormatter(
+                logger_config, self.serialization_config
+            )
         else:
-            self.formatter = StructuredFormatter(logger_config)
+            self.formatter = StructuredFormatter(
+                logger_config, self.serialization_config
+            )
 
-        # Output stream
+        # Output stream (could be enhanced to support file/network handlers)
         self.stream = sys.stdout
+        self._stats = {
+            "processed_entries": 0,
+            "dropped_entries": 0,
+            "errors": 0,
+            "batch_flushes": 0,
+        }
 
-    async def start(self):
+    async def start(self) -> None:
         """Start the async log processor"""
         if self.running:
             return
 
         self.running = True
+        self._shutdown_event.clear()
 
         # Start worker tasks
         for i in range(self.async_config.max_workers):
-            worker = asyncio.create_task(self._worker(f"worker-{i}"))
+            worker = asyncio.create_task(
+                self._worker(f"worker-{i}"), name=f"async-log-worker-{i}"
+            )
             self.workers.append(worker)
 
         # Start flush timer
-        flush_task = asyncio.create_task(self._flush_timer())
+        flush_task = asyncio.create_task(
+            self._flush_timer(), name="async-log-flush-timer"
+        )
         self.workers.append(flush_task)
 
-    async def stop(self, timeout: Optional[float] = None):
+    async def stop(self, timeout: Optional[float] = None) -> None:
         """Stop the async log processor"""
         if not self.running:
             return
 
         self.running = False
+        self._shutdown_event.set()
+
+        # Process remaining queue items
+        await self._drain_queue()
 
         # Flush remaining logs
         await self._flush_batch()
 
-        # Cancel workers
+        # Cancel workers gracefully
         for worker in self.workers:
-            worker.cancel()
+            if not worker.done():
+                worker.cancel()
 
         # Wait for workers to finish
         if timeout is None:
@@ -91,8 +121,12 @@ class AsyncLogProcessor:
         except asyncio.TimeoutError:
             # Force cancellation if timeout exceeded
             pass
+        finally:
+            self.workers.clear()
 
-        self.workers.clear()
+        # Flush output stream one final time
+        if hasattr(self.stream, "flush"):
+            self.stream.flush()
 
     async def enqueue_log(self, entry: AsyncLogEntry) -> bool:
         """Enqueue a log entry for processing"""
@@ -107,6 +141,7 @@ class AsyncLogProcessor:
                     self.queue.put_nowait(entry)
                     return True
                 except asyncio.QueueFull:
+                    self._stats["dropped_entries"] += 1
                     if self.async_config.error_callback:
                         self.async_config.error_callback(
                             Exception("Log queue overflow, dropping log entry")
@@ -128,7 +163,7 @@ class AsyncLogProcessor:
                 self.async_config.error_callback(e)
             return False
 
-    async def _worker(self, worker_name: str):
+    async def _worker(self, worker_name: str) -> None:
         """Worker task that processes log entries"""
         try:
             while self.running:
@@ -165,16 +200,21 @@ class AsyncLogProcessor:
                         await self._flush_batch()
 
                 except Exception as e:
+                    self._stats["errors"] += 1
                     if self.async_config.error_callback:
                         self.async_config.error_callback(e)
 
         except asyncio.CancelledError:
             # Worker was cancelled, flush remaining logs
             if self.batch:
-                await self._flush_batch()
+                try:
+                    await self._flush_batch()
+                except Exception as e:
+                    if self.async_config.error_callback:
+                        self.async_config.error_callback(e)
             raise
 
-    async def _flush_timer(self):
+    async def _flush_timer(self) -> None:
         """Timer task that ensures regular flushing"""
         try:
             while self.running:
@@ -184,30 +224,51 @@ class AsyncLogProcessor:
         except asyncio.CancelledError:
             raise
 
-    async def _flush_batch(self):
+    async def _drain_queue(self) -> None:
+        """Drain remaining items from queue during shutdown"""
+        try:
+            while not self.queue.empty():
+                try:
+                    entry = self.queue.get_nowait()
+                    self.batch.append(entry)
+                    self.queue.task_done()
+                except asyncio.QueueEmpty:
+                    break
+        except Exception as e:
+            if self.async_config.error_callback:
+                self.async_config.error_callback(e)
+
+    async def _flush_batch(self) -> None:
         """Flush the current batch of log entries"""
         if not self.batch:
             return
 
+        batch_to_process = self.batch.copy()
+        self.batch.clear()
+
         try:
             # Process all entries in batch
-            for entry in self.batch:
+            for entry in batch_to_process:
                 await self._process_log_entry(entry)
+                self._stats["processed_entries"] += 1
 
-            # Clear batch and update flush time
-            self.batch.clear()
+            # Update flush time and stats
             self.last_flush_time = time.time()
+            self._stats["batch_flushes"] += 1
 
             # Flush output stream
             if hasattr(self.stream, "flush"):
                 self.stream.flush()
 
         except Exception as e:
+            self._stats["errors"] += 1
+            # Put entries back if processing failed
+            self.batch.extend(batch_to_process)
             if self.async_config.error_callback:
                 self.async_config.error_callback(e)
 
-    async def _process_log_entry(self, entry: AsyncLogEntry):
-        """Process a single log entry"""
+    async def _process_log_entry(self, entry: AsyncLogEntry) -> None:
+        """Process a single log entry with enhanced serialization"""
         # Create LogRecord for formatter
         record = logging.LogRecord(
             name=entry.logger_name,
@@ -219,36 +280,70 @@ class AsyncLogProcessor:
             exc_info=None,
         )
 
-        # Add context to record
+        # Set timestamp from entry
+        record.created = entry.timestamp
+
+        # Add context to record (already includes ctx_ prefix)
         for key, value in entry.context.items():
             setattr(record, key, value)
 
+        # Serialize complex extra data using the enhanced serialization system
         for key, value in entry.extra.items():
-            setattr(record, f"ctx_{key}", value)
+            if value is not None:
+                try:
+                    # Use the enhanced serialization system for complex objects
+                    serialized_value = serialize_for_logging(
+                        value, self.serialization_config
+                    )
+                    setattr(record, f"ctx_{key}", serialized_value)
+                except Exception as e:
+                    # Fallback to string representation
+                    setattr(record, f"ctx_{key}", str(value))
+                    if self.async_config.error_callback:
+                        self.async_config.error_callback(
+                            Exception(f"Failed to serialize {key}: {e}")
+                        )
 
         # Format and write
         formatted_message = self.formatter.format(record)
         self.stream.write(formatted_message + "\n")
 
+    def get_stats(self) -> Dict[str, Any]:
+        """Get processor statistics"""
+        return {
+            **self._stats,
+            "queue_size": self.queue.qsize(),
+            "batch_size": len(self.batch),
+            "running": self.running,
+            "worker_count": len(self.workers),
+        }
+
 
 class AsyncLogger:
-    """Async logger that provides non-blocking logging operations"""
+    """Async logger with non-blocking operations and enhanced serialization"""
 
     def __init__(
         self,
         name: str,
         logger_config: Optional[LoggerConfig] = None,
         async_config: Optional[AsyncLoggerConfig] = None,
+        serialization_config: Optional[SerializationConfig] = None,
     ):
         self.name = name
         self.logger_config = logger_config or get_default_config()
         self.async_config = async_config or get_default_async_config()
+        self.serialization_config = serialization_config or SerializationConfig()
 
-        # Create processor
-        self.processor = AsyncLogProcessor(self.async_config, self.logger_config)
+        # Create processor with serialization config
+        self.processor = AsyncLogProcessor(
+            self.async_config, self.logger_config, self.serialization_config
+        )
 
         # Minimum log level
         self.level = getattr(logging, self.logger_config.log_level.upper())
+
+        # Track if started
+        self._started = False
 
     async def _alog(self, level: str, message: str, **extra: Any) -> bool:
         """Internal async logging method"""
@@ -321,17 +416,30 @@ class AsyncLogger:
 
         return await self._alog(level_name, message, **extra)
 
-    async def start(self):
+    async def start(self) -> None:
         """Start the async logger"""
         await self.processor.start()
 
-    async def stop(self, timeout: Optional[float] = None):
+    async def stop(self, timeout: Optional[float] = None) -> None:
         """Stop the async logger"""
         await self.processor.stop(timeout)
 
-    async def flush(self):
+    async def flush(self) -> None:
         """Flush all pending logs"""
         await self.processor._flush_batch()
+
+    def get_stats(self) -> Dict[str, Any]:
+        """Get logger statistics"""
+        return self.processor.get_stats()
+
+    async def __aenter__(self) -> "AsyncLogger":
+        """Async context manager entry"""
+        await self.start()
+        return self
+
+    async def __aexit__(self, exc_type: Any, exc_val: Any, exc_tb: Any) -> None:
+        """Async context manager exit"""
+        await self.stop()
 
 
 # Global async logger registry
@@ -342,13 +450,18 @@ def get_async_logger(
     name: str,
     logger_config: Optional[LoggerConfig] = None,
     async_config: Optional[AsyncLoggerConfig] = None,
+    serialization_config: Optional[SerializationConfig] = None,
 ) -> AsyncLogger:
-    """Get or create an async logger"""
+    """Get or create an async logger with enhanced serialization support"""
     # Use config-based key for caching
-    config_key = f"{name}_{id(logger_config)}_{id(async_config)}"
+    config_key = (
+        f"{name}_{id(logger_config)}_{id(async_config)}_{id(serialization_config)}"
+    )
 
     if config_key not in _async_loggers:
-        _async_loggers[config_key] = AsyncLogger(name, logger_config, async_config)
+        _async_loggers[config_key] = AsyncLogger(
+            name, logger_config, async_config, serialization_config
+        )
 
     return _async_loggers[config_key]
 
@@ -360,7 +473,7 @@ async def alog_with_context(
     return await logger._alog(level, message, **extra)
 
 
-async def shutdown_all_async_loggers(timeout: Optional[float] = None):
+async def shutdown_all_async_loggers(timeout: Optional[float] = None) -> None:
     """Shutdown all async loggers"""
     shutdown_tasks = []
     for logger in _async_loggers.values():
