@@ -37,6 +37,53 @@ class HTTPHandler(BaseNetworkHandler):
             encoded = base64.b64encode(credentials.encode()).decode()
             self.auth_headers["Authorization"] = f"Basic {encoded}"
 
+    def _prepare_single_message_payload(self, message: Dict[str, Any]) -> Dict[str, Any]:
+        """Prepare payload for single message"""
+        return {
+            "message": message["message"],
+            "timestamp": message["timestamp"],
+            "level": message["record"].levelname,
+            "logger": message["record"].name,
+        }
+
+    def _prepare_batch_payload(self, messages: List[Dict[str, Any]]) -> Dict[str, Any]:
+        """Prepare payload for batch of messages"""
+        return {
+            "logs": [
+                {
+                    "message": msg["message"],
+                    "timestamp": msg["timestamp"],
+                    "level": msg["record"].levelname,
+                    "logger": msg["record"].name,
+                }
+                for msg in messages
+            ],
+            "batch_size": len(messages),
+        }
+
+    def _prepare_request_headers(self, data_length: int) -> Dict[str, str]:
+        """Prepare HTTP request headers"""
+        headers = {
+            "Content-Type": self.http_config.content_type,
+            "User-Agent": self.http_config.user_agent,
+            "Content-Length": str(data_length),
+        }
+        headers.update(self.http_config.headers)
+        headers.update(self.auth_headers)
+        return headers
+
+    def _execute_http_request(self, request: urllib.request.Request) -> None:
+        """Execute HTTP request and handle response"""
+        with urllib.request.urlopen(request, timeout=self.config.timeout) as response:
+            if response.status >= 400:
+                raise HTTPError(
+                    self.http_config.url,
+                    response.status,
+                    f"HTTP {response.status}",
+                    response.headers,
+                    None,
+                )
+
     def _send_batch(self, messages: List[Dict[str, Any]]) -> None:
         """Send batch of messages via HTTP"""
         if not messages:
@@ -45,59 +92,23 @@ class HTTPHandler(BaseNetworkHandler):
         def send_http_request():
             # Prepare payload
             if self.http_config.batch_size == 1 and len(messages) == 1:
-                # Single message
-                payload = {
-                    "message": messages[0]["message"],
-                    "timestamp": messages[0]["timestamp"],
-                    "level": messages[0]["record"].levelname,
-                    "logger": messages[0]["record"].name,
-                }
+                payload = self._prepare_single_message_payload(messages[0])
             else:
-                # Batch of messages
-                payload = {
-                    "logs": [
-                        {
-                            "message": msg["message"],
-                            "timestamp": msg["timestamp"],
-                            "level": msg["record"].levelname,
-                            "logger": msg["record"].name,
-                        }
-                        for msg in messages
-                    ],
-                    "batch_size": len(messages),
-                }
+                payload = self._prepare_batch_payload(messages)
 
             # Convert to JSON
             data = json.dumps(payload).encode("utf-8")
-
-            # Prepare headers
-            headers = {
-                "Content-Type": self.http_config.content_type,
-                "User-Agent": self.http_config.user_agent,
-                "Content-Length": str(len(data)),
-            }
-            headers.update(self.http_config.headers)
-            headers.update(self.auth_headers)
-
-            # Create request
+            
+            # Prepare request
+            headers = self._prepare_request_headers(len(data))
             request = urllib.request.Request(
                 self.http_config.url,
                 data=data,
                 headers=headers,
                 method=self.http_config.method,
             )
-
-            # Send request
-            with urllib.request.urlopen(
-                request, timeout=self.config.timeout
-            ) as response:
-                if response.status >= 400:
-                    raise HTTPError(
-                        self.http_config.url,
-                        response.status,
-                        f"HTTP {response.status}",
-                        response.headers,
-                        None,
-                    )
+            
+            # Execute request
+            self._execute_http_request(request)
 
         self._send_with_retry(send_http_request)
