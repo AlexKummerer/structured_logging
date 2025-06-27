@@ -310,60 +310,73 @@ class TypeAnnotationExtractor:
         self._type_cache[func_id] = schema
         return schema
 
-    def _type_to_constraint(self, type_hint: Any) -> Dict[str, Any]:
-        """Convert Python type hint to schema constraint"""
-        from typing import Union, get_args, get_origin
-
-        # Handle None type
+    def _get_basic_type_constraint(self, type_hint: Any) -> Optional[Dict[str, Any]]:
+        """Get constraint for basic Python types"""
+        basic_types = {
+            str: "str", int: "int", float: "float", bool: "bool",
+            list: "list", dict: "dict", set: "set", tuple: "tuple",
+        }
+        
         if type_hint is type(None):
             return {"type": "none", "required": False}
-
-        # Handle basic types
-        basic_types = {
-            str: "str",
-            int: "int",
-            float: "float",
-            bool: "bool",
-            list: "list",
-            dict: "dict",
-            set: "set",
-            tuple: "tuple",
-        }
-
-        if type_hint in basic_types:
+        elif type_hint in basic_types:
             return {"type": basic_types[type_hint], "required": True}
+        elif type_hint is Any:
+            return {"type": "any", "required": True}
+        
+        return None
 
-        # Handle Optional types
-        origin = get_origin(type_hint)
-        args = get_args(type_hint)
+    def _handle_optional_type(self, origin: Any, args: tuple) -> Optional[Dict[str, Any]]:
+        """Handle Optional[T] type hints"""
+        from typing import Union
+        
+        if origin is Union and type(None) in args:
+            non_none_types = [t for t in args if t is not type(None)]
+            if len(non_none_types) == 1:
+                constraint = self._type_to_constraint(non_none_types[0])
+                constraint["required"] = False
+                return constraint
+        return None
 
-        if origin is Union:
-            # Check if it's Optional (Union with None)
-            if type(None) in args:
-                # It's Optional[T]
-                non_none_types = [t for t in args if t is not type(None)]
-                if len(non_none_types) == 1:
-                    constraint = self._type_to_constraint(non_none_types[0])
-                    constraint["required"] = False
-                    return constraint
-
-        # Handle generic types (List[str], Dict[str, int], etc.)
+    def _handle_generic_type(self, origin: Any, args: tuple) -> Optional[Dict[str, Any]]:
+        """Handle generic types like List[T], Dict[K,V]"""
         if origin in (list, List):
             constraint = {"type": "list", "required": True}
             if args:
                 constraint["item_type"] = self._type_to_constraint(args[0])
             return constraint
-
+            
         if origin in (dict, Dict):
             constraint = {"type": "dict", "required": True}
             if len(args) >= 2:
                 constraint["key_type"] = self._type_to_constraint(args[0])
                 constraint["value_type"] = self._type_to_constraint(args[1])
             return constraint
+            
+        return None
 
-        # Handle Any
-        if type_hint is Any:
-            return {"type": "any", "required": True}
+    def _type_to_constraint(self, type_hint: Any) -> Dict[str, Any]:
+        """Convert Python type hint to schema constraint"""
+        from typing import get_args, get_origin
+
+        # Try basic types first
+        basic_constraint = self._get_basic_type_constraint(type_hint)
+        if basic_constraint:
+            return basic_constraint
+
+        # Handle complex types
+        origin = get_origin(type_hint)
+        args = get_args(type_hint)
+
+        # Try Optional types
+        optional_constraint = self._handle_optional_type(origin, args)
+        if optional_constraint:
+            return optional_constraint
+            
+        # Try generic types
+        generic_constraint = self._handle_generic_type(origin, args)
+        if generic_constraint:
+            return generic_constraint
 
         # Default for unknown types
         return {"type": str(type_hint), "required": True}
