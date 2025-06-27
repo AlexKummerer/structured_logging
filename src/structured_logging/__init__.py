@@ -74,7 +74,7 @@ from .logger import (
     log_with_context,
     reset_filter_metrics,
 )
-from .network_handlers import (
+from .network import (
     HTTPConfig,
     HTTPHandler,
     NetworkHandlerConfig,

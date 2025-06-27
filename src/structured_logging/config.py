@@ -2,10 +2,18 @@ import os
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Literal, Optional
 
+# Import all required modules at the top
+from .filtering import FilterConfig, LevelFilter, SamplingFilter
+from .handlers import FileHandlerConfig
+from .network import (
+    HTTPConfig,
+    NetworkHandlerConfig,
+    SocketConfig,
+    SyslogConfig,
+)
+
 if TYPE_CHECKING:
-    from .filtering import FilterConfig
-    from .handlers import FileHandlerConfig
-    from .network_handlers import NetworkHandlerConfig
+    pass
 
 FormatterType = Literal["json", "csv", "plain"]
 OutputType = Literal[
@@ -37,8 +45,6 @@ class LoggerConfig:
         # Create filter config if filtering is enabled
         filter_config = None
         if os.getenv("STRUCTURED_LOG_FILTERING", "false").lower() == "true":
-            from .filtering import FilterConfig, LevelFilter, SamplingFilter
-
             sample_rate = float(os.getenv("STRUCTURED_LOG_SAMPLE_RATE", "1.0"))
             max_per_second = os.getenv("STRUCTURED_LOG_MAX_PER_SECOND")
 
@@ -75,8 +81,6 @@ class LoggerConfig:
         output_type = os.getenv("STRUCTURED_LOG_OUTPUT", "console").lower()
 
         if "file" in output_type:
-            from .handlers import FileHandlerConfig
-
             file_config = FileHandlerConfig(
                 filename=os.getenv("STRUCTURED_LOG_FILENAME", "app.log"),
                 max_bytes=int(
@@ -101,8 +105,6 @@ class LoggerConfig:
             network_type = os.getenv("STRUCTURED_LOG_NETWORK_TYPE", "syslog").lower()
 
             if network_type == "syslog":
-                from .network_handlers import SyslogConfig
-
                 network_config = SyslogConfig(
                     host=os.getenv("STRUCTURED_LOG_SYSLOG_HOST", "localhost"),
                     port=int(os.getenv("STRUCTURED_LOG_SYSLOG_PORT", "514")),
@@ -113,8 +115,6 @@ class LoggerConfig:
                     == "true",
                 )
             elif network_type == "http":
-                from .network_handlers import HTTPConfig
-
                 network_config = HTTPConfig(
                     url=os.getenv(
                         "STRUCTURED_LOG_HTTP_URL", "http://localhost:8080/logs"
@@ -126,8 +126,6 @@ class LoggerConfig:
                     batch_size=int(os.getenv("STRUCTURED_LOG_HTTP_BATCH_SIZE", "10")),
                 )
             elif network_type == "socket":
-                from .network_handlers import SocketConfig
-
                 network_config = SocketConfig(
                     host=os.getenv("STRUCTURED_LOG_SOCKET_HOST", "localhost"),
                     port=int(os.getenv("STRUCTURED_LOG_SOCKET_PORT", "5140")),

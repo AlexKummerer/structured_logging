@@ -2,7 +2,6 @@
 Tests for enhanced NumPy/Pandas integration
 """
 
-
 import pytest
 
 from structured_logging.serializers import (

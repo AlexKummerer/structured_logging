@@ -1,69 +1,35 @@
 """
-Framework integrations for structured logging
+FastAPI integration for structured logging
 """
 
 import json
 import time
 import uuid
-from dataclasses import dataclass, field
-from typing import Any, Callable, Dict, Optional, Set
+from typing import Any, Callable, Dict, Optional
 
 try:
     from fastapi import FastAPI, Request, Response
     from fastapi.responses import StreamingResponse
     from starlette.middleware.base import BaseHTTPMiddleware
-    from starlette.types import ASGIApp, Receive, Scope, Send
+    from starlette.types import ASGIApp
 
     FASTAPI_AVAILABLE = True
 except ImportError:
     FASTAPI_AVAILABLE = False
+    # Define dummy types for type checking
+    FastAPI = Any
+    Request = Any
+    Response = Any
+    StreamingResponse = Any
+    BaseHTTPMiddleware = object
+    ASGIApp = Any
 
-from .config import LoggerConfig
-from .context import request_context
-from .logger import get_logger, log_with_context
-
-
-@dataclass
-class FastAPILoggingConfig:
-    """Configuration for FastAPI logging middleware"""
-
-    # Logger configuration
-    logger_config: Optional[LoggerConfig] = None
-    logger_name: str = "fastapi"
-
-    # Request logging
-    log_requests: bool = True
-    log_request_body: bool = False
-    log_request_headers: bool = True
-    max_request_body_size: int = 1024  # bytes
-
-    # Response logging
-    log_responses: bool = True
-    log_response_body: bool = False
-    log_response_headers: bool = False
-    max_response_body_size: int = 1024  # bytes
-
-    # Filtering
-    exclude_paths: Set[str] = field(
-        default_factory=lambda: {"/health", "/metrics", "/favicon.ico"}
-    )
-    exclude_methods: Set[str] = field(default_factory=set)
-    log_only_errors: bool = False
-    min_duration_ms: Optional[float] = None
-
-    # Sensitive data protection
-    sensitive_headers: Set[str] = field(
-        default_factory=lambda: {"authorization", "cookie", "x-api-key", "x-auth-token"}
-    )
-    sensitive_query_params: Set[str] = field(
-        default_factory=lambda: {"password", "token", "api_key", "secret"}
-    )
-    mask_sensitive_data: bool = True
-
-    # Performance
-    capture_user_agent: bool = True
-    capture_ip_address: bool = True
-    capture_route_info: bool = True
+from ..config import LoggerConfig
+from ..filtering import FilterConfig, LevelFilter, SamplingFilter
+from ..handlers import FileHandlerConfig
+from ..logger import get_logger
+from .config import FastAPILoggingConfig
+from .utils import filter_sensitive_headers, filter_sensitive_query_params
 
 
 class FastAPILoggingMiddleware(BaseHTTPMiddleware):
@@ -195,7 +161,11 @@ class FastAPILoggingMiddleware(BaseHTTPMiddleware):
 
         # Add headers (filtered)
         if self.config.log_request_headers:
-            headers = self._filter_sensitive_headers(dict(request.headers))
+            headers = filter_sensitive_headers(
+                dict(request.headers),
+                self.config.sensitive_headers,
+                self.config.mask_sensitive_data,
+            )
             if headers:
                 info["headers"] = headers
 
@@ -207,8 +177,10 @@ class FastAPILoggingMiddleware(BaseHTTPMiddleware):
 
         # Filter sensitive query params
         if self.config.mask_sensitive_data and info.get("query_params"):
-            info["query_params"] = self._filter_sensitive_query_params(
-                info["query_params"]
+            info["query_params"] = filter_sensitive_query_params(
+                info["query_params"],
+                self.config.sensitive_query_params,
+                self.config.mask_sensitive_data,
             )
 
         return {k: v for k, v in info.items() if v is not None}
@@ -223,7 +195,11 @@ class FastAPILoggingMiddleware(BaseHTTPMiddleware):
         if self.config.log_response_headers:
             headers = getattr(response, "headers", {})
             if headers:
-                filtered_headers = self._filter_sensitive_headers(dict(headers))
+                filtered_headers = filter_sensitive_headers(
+                    dict(headers),
+                    self.config.sensitive_headers,
+                    self.config.mask_sensitive_data,
+                )
                 if filtered_headers:
                     info["response_headers"] = filtered_headers
 
@@ -283,34 +259,6 @@ class FastAPILoggingMiddleware(BaseHTTPMiddleware):
 
         except Exception:
             return None
-
-    def _filter_sensitive_headers(self, headers: Dict[str, str]) -> Dict[str, str]:
-        """Filter out sensitive headers"""
-        if not self.config.mask_sensitive_data:
-            return headers
-
-        filtered = {}
-        for key, value in headers.items():
-            if key.lower() in self.config.sensitive_headers:
-                filtered[key] = "[MASKED]"
-            else:
-                filtered[key] = value
-
-        return filtered
-
-    def _filter_sensitive_query_params(self, params: Dict[str, str]) -> Dict[str, str]:
-        """Filter out sensitive query parameters"""
-        if not self.config.mask_sensitive_data:
-            return params
-
-        filtered = {}
-        for key, value in params.items():
-            if key.lower() in self.config.sensitive_query_params:
-                filtered[key] = "[MASKED]"
-            else:
-                filtered[key] = value
-
-        return filtered
 
     def _should_log_request(
         self, response: Optional[Response], duration_ms: float, exception_occurred: bool
@@ -397,9 +345,6 @@ def create_fastapi_logger_config(
     Returns:
         Configured LoggerConfig instance
     """
-    from .filtering import FilterConfig, LevelFilter, SamplingFilter
-    from .handlers import FileHandlerConfig
-
     # Create filter config if enabled
     filter_config = None
     if enable_filtering:
@@ -438,81 +383,3 @@ def create_fastapi_logger_config(
         output_type=output_type,
         file_config=file_config,
     )
-
-
-# Flask integration (basic implementation)
-def create_flask_logger_config() -> LoggerConfig:
-    """Create a logger configuration optimized for Flask"""
-    return create_fastapi_logger_config()  # Same config works for Flask
-
-
-class FlaskLoggingMiddleware:
-    """Basic Flask middleware for request logging"""
-
-    def __init__(self, app, config: Optional[FastAPILoggingConfig] = None):
-        if config is None:
-            config = FastAPILoggingConfig()
-
-        self.config = config
-        self.logger = get_logger(config.logger_name, config.logger_config)
-
-        if app is not None:
-            self.init_app(app)
-
-    def init_app(self, app):
-        """Initialize Flask app with logging"""
-        app.before_request(self._before_request)
-        app.after_request(self._after_request)
-
-    def _before_request(self):
-        """Log request start"""
-        try:
-            from flask import g, request
-
-            g.request_start_time = time.time()
-            g.request_id = str(uuid.uuid4())
-
-            if self.config.log_requests:
-                with request_context(custom_fields={"request_id": g.request_id}):
-                    log_with_context(
-                        self.logger,
-                        "info",
-                        f"Request started: {request.method} {request.path}",
-                        self.config.logger_config,
-                        method=request.method,
-                        path=request.path,
-                        remote_addr=request.remote_addr,
-                        user_agent=request.headers.get("User-Agent"),
-                    )
-        except Exception:
-            pass  # Don't break the request if logging fails
-
-    def _after_request(self, response):
-        """Log request completion"""
-        try:
-            from flask import g, request
-
-            duration_ms = (time.time() - g.request_start_time) * 1000
-
-            if self.config.log_responses:
-                with request_context(custom_fields={"request_id": g.request_id}):
-                    log_level = (
-                        "error"
-                        if response.status_code >= 500
-                        else "warning" if response.status_code >= 400 else "info"
-                    )
-
-                    log_with_context(
-                        self.logger,
-                        log_level,
-                        f"Request completed: {request.method} {request.path} - {response.status_code}",
-                        self.config.logger_config,
-                        method=request.method,
-                        path=request.path,
-                        status_code=response.status_code,
-                        duration_ms=duration_ms,
-                    )
-        except Exception:
-            pass  # Don't break the response if logging fails
-
-        return response

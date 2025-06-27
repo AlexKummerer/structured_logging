@@ -7,6 +7,7 @@ from typing import Any, Dict, Optional
 from .config import LoggerConfig, get_default_config
 from .performance import fast_timestamp
 from .serializers import (
+    EnhancedJSONEncoder,
     LazyDict,
     LazySerializable,
     SerializationConfig,
@@ -69,9 +70,6 @@ class StructuredFormatter(logging.Formatter):
 
         if has_lazy_objects:
             # Use custom encoder that knows how to handle lazy objects
-            from .serializers import EnhancedJSONEncoder
-
-            encoder = EnhancedJSONEncoder(config=self.serialization_config)
             return json.dumps(log_entry, cls=EnhancedJSONEncoder, separators=(",", ":"))
         else:
             # Fast path for non-lazy objects

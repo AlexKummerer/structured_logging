@@ -6,6 +6,8 @@ from .config import LoggerConfig, get_default_config
 from .context import get_custom_context, get_request_id, get_user_context
 from .filtering import FilterEngine
 from .formatter import CSVFormatter, PlainTextFormatter, StructuredFormatter
+from .handlers import RotatingFileHandler
+from .network import HTTPHandler, SocketHandler, SyslogConfig, SyslogHandler
 
 # Performance optimization: Cache formatter instances
 _formatter_cache: Dict[str, logging.Formatter] = {}
@@ -46,16 +48,12 @@ def get_logger(name: str, config: Optional[LoggerConfig] = None) -> logging.Logg
 
         # Add file handler if required
         if "file" in config.output_type and config.file_config:
-            from .handlers import RotatingFileHandler
-
             file_handler = RotatingFileHandler(config.file_config)
             file_handler.setFormatter(formatter)
             logger.addHandler(file_handler)
 
         # Add network handler if required
         if "network" in config.output_type and config.network_config:
-            from .network_handlers import HTTPHandler, SocketHandler, SyslogHandler
-
             # Determine handler type based on config
             if hasattr(config.network_config, "facility"):  # SyslogConfig
                 network_handler = SyslogHandler(config.network_config)
@@ -65,8 +63,6 @@ def get_logger(name: str, config: Optional[LoggerConfig] = None) -> logging.Logg
                 network_handler = SocketHandler(config.network_config)
             else:
                 # Default to syslog
-                from .network_handlers import SyslogConfig
-
                 syslog_config = SyslogConfig(
                     host=config.network_config.host, port=config.network_config.port
                 )
