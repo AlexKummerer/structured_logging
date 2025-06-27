@@ -133,9 +133,9 @@ class FastAPILoggingMiddleware(BaseHTTPMiddleware):
         
         return response
 
-    async def _extract_request_info(self, request: Request) -> Dict[str, Any]:
-        """Extract relevant information from request"""
-        info = {
+    def _get_basic_request_info(self, request: Request) -> Dict[str, Any]:
+        """Extract basic request information"""
+        return {
             "method": request.method,
             "path": request.url.path,
             "query_params": (
@@ -143,7 +143,8 @@ class FastAPILoggingMiddleware(BaseHTTPMiddleware):
             ),
         }
 
-        # Add IP address
+    def _add_client_info(self, request: Request, info: Dict[str, Any]) -> None:
+        """Add client information to request info"""
         if self.config.capture_ip_address:
             client_ip = (
                 getattr(request.client, "host", None) if request.client else None
@@ -151,20 +152,21 @@ class FastAPILoggingMiddleware(BaseHTTPMiddleware):
             if client_ip:
                 info["client_ip"] = client_ip
 
-        # Add user agent
         if self.config.capture_user_agent:
             user_agent = request.headers.get("user-agent")
             if user_agent:
                 info["user_agent"] = user_agent
 
-        # Add route info
+    def _add_route_info(self, request: Request, info: Dict[str, Any]) -> None:
+        """Add route information to request info"""
         if self.config.capture_route_info:
             route = getattr(request, "route", None)
             if route:
                 info["route_name"] = getattr(route, "name", None)
                 info["route_path"] = getattr(route, "path", None)
 
-        # Add headers (filtered)
+    def _add_headers_info(self, request: Request, info: Dict[str, Any]) -> None:
+        """Add filtered headers to request info"""
         if self.config.log_request_headers:
             headers = filter_sensitive_headers(
                 dict(request.headers),
@@ -174,13 +176,15 @@ class FastAPILoggingMiddleware(BaseHTTPMiddleware):
             if headers:
                 info["headers"] = headers
 
-        # Add request body
+    async def _add_body_info(self, request: Request, info: Dict[str, Any]) -> None:
+        """Add request body to info"""
         if self.config.log_request_body:
             body = await self._extract_request_body(request)
             if body:
                 info["request_body"] = body
 
-        # Filter sensitive query params
+    def _filter_query_params(self, info: Dict[str, Any]) -> None:
+        """Filter sensitive query parameters"""
         if self.config.mask_sensitive_data and info.get("query_params"):
             info["query_params"] = filter_sensitive_query_params(
                 info["query_params"],
@@ -188,6 +192,16 @@ class FastAPILoggingMiddleware(BaseHTTPMiddleware):
                 self.config.mask_sensitive_data,
             )
 
+    async def _extract_request_info(self, request: Request) -> Dict[str, Any]:
+        """Extract relevant information from request"""
+        info = self._get_basic_request_info(request)
+        
+        self._add_client_info(request, info)
+        self._add_route_info(request, info)
+        self._add_headers_info(request, info)
+        await self._add_body_info(request, info)
+        self._filter_query_params(info)
+        
         return {k: v for k, v in info.items() if v is not None}
 
     async def _extract_response_info(self, response: Response) -> Dict[str, Any]:
