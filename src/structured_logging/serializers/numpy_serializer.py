@@ -15,30 +15,18 @@ except ImportError:
 from .config import SerializationConfig
 
 
-def serialize_numpy_array(
-    array: Any, config: SerializationConfig
-) -> Dict[str, Any]:
-    """Enhanced NumPy array serialization with comprehensive features"""
-    if not HAS_NUMPY:
-        return {"error": "NumPy not available"}
-
-    result = {}
-
-    # Basic metadata
+def _add_array_metadata(array: Any, config: SerializationConfig, result: Dict[str, Any]) -> None:
+    """Add array metadata to result dictionary"""
     if config.numpy_include_metadata:
-        result.update(
-            {
-                "shape": list(array.shape),
-                "dtype": str(array.dtype),
-                "size": int(array.size),
-                "ndim": int(array.ndim),
-                "itemsize": int(array.itemsize),
-                "nbytes": int(array.nbytes),
-                "__numpy_type__": "ndarray",
-            }
-        )
-
-        # Memory layout information
+        result.update({
+            "shape": list(array.shape),
+            "dtype": str(array.dtype),
+            "size": int(array.size),
+            "ndim": int(array.ndim),
+            "itemsize": int(array.itemsize),
+            "nbytes": int(array.nbytes),
+            "__numpy_type__": "ndarray",
+        })
         result["flags"] = {
             "c_contiguous": bool(array.flags.c_contiguous),
             "f_contiguous": bool(array.flags.f_contiguous),
@@ -46,16 +34,15 @@ def serialize_numpy_array(
             "aligned": bool(array.flags.aligned),
         }
     else:
-        # Minimal metadata
-        result.update(
-            {
-                "shape": list(array.shape),
-                "dtype": str(array.dtype),
-                "size": int(array.size),
-            }
-        )
+        result.update({
+            "shape": list(array.shape),
+            "dtype": str(array.dtype),
+            "size": int(array.size),
+        })
 
-    # Handle special values (inf/nan) before serialization
+
+def _add_special_values_info(array: Any, config: SerializationConfig, result: Dict[str, Any]) -> None:
+    """Add information about special values (NaN/Inf) to result"""
     if config.numpy_handle_inf_nan and np.issubdtype(array.dtype, np.floating):
         has_nan = bool(np.any(np.isnan(array)))
         has_inf = bool(np.any(np.isinf(array)))
@@ -67,62 +54,67 @@ def serialize_numpy_array(
                 "inf_count": int(np.sum(np.isinf(array))) if has_inf else 0,
             }
 
-    # Data serialization strategy based on size
+
+def _serialize_array_data(array: Any, config: SerializationConfig, result: Dict[str, Any]) -> None:
+    """Serialize array data based on size strategy"""
     if array.size <= config.numpy_array_max_size:
         # Small arrays: include full data
         try:
-            if config.numpy_array_precision and np.issubdtype(
-                array.dtype, np.floating
-            ):
-                # Apply precision rounding for floating point arrays
+            if config.numpy_array_precision and np.issubdtype(array.dtype, np.floating):
                 rounded_array = np.round(array, config.numpy_array_precision)
                 result["data"] = rounded_array.tolist()
             else:
                 result["data"] = array.tolist()
             result["serialization_method"] = "full"
         except (ValueError, TypeError):
-            # Fallback for arrays that can't be converted to list
             result["data_error"] = "Cannot convert array to list"
             result["repr_sample"] = str(array.flat[:5])
-
     elif array.size <= config.numpy_compression_threshold:
-        # Medium arrays: include sample and statistics
         result.update(_get_numpy_array_summary(array, config))
         result["serialization_method"] = "summary"
-
     else:
-        # Large arrays: compressed representation
         result.update(_get_numpy_array_compressed(array, config))
         result["serialization_method"] = "compressed"
 
-    # Statistics for numeric arrays (if enabled)
-    if (
-        config.numpy_stats_for_numeric
-        and np.issubdtype(array.dtype, np.number)
-        and array.size > 0
-    ):
+
+def _add_array_statistics(array: Any, config: SerializationConfig, result: Dict[str, Any]) -> None:
+    """Add statistical information to result"""
+    if config.numpy_stats_for_numeric and np.issubdtype(array.dtype, np.number) and array.size > 0:
         try:
             stats = _compute_numpy_stats(array, config)
             result["statistics"] = stats
         except Exception as e:
             result["statistics_error"] = f"Could not compute statistics: {str(e)}"
 
-    # Handle sparse arrays (if scipy is available and array is sparse)
+
+def _add_sparse_info(array: Any, config: SerializationConfig, result: Dict[str, Any]) -> None:
+    """Add sparse array information to result"""
     if config.numpy_preserve_sparse:
         try:
-            # Check if it's a scipy sparse matrix
             if hasattr(array, "format") and hasattr(array, "nnz"):
                 result["sparse_info"] = {
                     "format": array.format,
                     "nnz": int(array.nnz),
-                    "density": (
-                        float(array.nnz / array.size) if array.size > 0 else 0.0
-                    ),
+                    "density": float(array.nnz / array.size) if array.size > 0 else 0.0,
                     "__is_sparse__": True,
                 }
         except:
-            pass  # Not a sparse array or scipy not available
+            pass
 
+
+def serialize_numpy_array(array: Any, config: SerializationConfig) -> Dict[str, Any]:
+    """Enhanced NumPy array serialization with comprehensive features"""
+    if not HAS_NUMPY:
+        return {"error": "NumPy not available"}
+
+    result = {}
+    
+    _add_array_metadata(array, config, result)
+    _add_special_values_info(array, config, result)
+    _serialize_array_data(array, config, result)
+    _add_array_statistics(array, config, result)
+    _add_sparse_info(array, config, result)
+    
     return result
 
 
