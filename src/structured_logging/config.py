@@ -36,121 +36,128 @@ class LoggerConfig:
     network_config: Optional["NetworkHandlerConfig"] = None
 
     @classmethod
+    def _parse_bool_env(cls, key: str, default: str = "false") -> bool:
+        """Parse boolean from environment variable"""
+        return os.getenv(key, default).lower() == "true"
+
+    @classmethod
+    def _create_filter_config_from_env(cls) -> Optional[FilterConfig]:
+        """Create filter configuration from environment variables"""
+        if not cls._parse_bool_env("STRUCTURED_LOG_FILTERING"):
+            return None
+
+        sample_rate = float(os.getenv("STRUCTURED_LOG_SAMPLE_RATE", "1.0"))
+        max_per_second = os.getenv("STRUCTURED_LOG_MAX_PER_SECOND")
+        filters = []
+
+        # Add level filter
+        filters.append(
+            LevelFilter(min_level=os.getenv("STRUCTURED_LOG_LEVEL", "INFO"))
+        )
+
+        # Add sampling filter if configured
+        if sample_rate < 1.0 or max_per_second:
+            filters.append(
+                SamplingFilter(
+                    sample_rate=sample_rate,
+                    strategy=os.getenv("STRUCTURED_LOG_SAMPLING_STRATEGY", "level_based"),
+                    max_per_second=int(max_per_second) if max_per_second else None,
+                )
+            )
+
+        return FilterConfig(
+            enabled=True,
+            filters=filters,
+            collect_metrics=cls._parse_bool_env("STRUCTURED_LOG_COLLECT_METRICS", "true"),
+        )
+
+    @classmethod
+    def _create_file_config_from_env(cls) -> Optional[FileHandlerConfig]:
+        """Create file handler configuration from environment variables"""
+        output_type = os.getenv("STRUCTURED_LOG_OUTPUT", "console").lower()
+        if "file" not in output_type:
+            return None
+
+        return FileHandlerConfig(
+            filename=os.getenv("STRUCTURED_LOG_FILENAME", "app.log"),
+            max_bytes=int(os.getenv("STRUCTURED_LOG_MAX_BYTES", "10485760")),
+            backup_count=int(os.getenv("STRUCTURED_LOG_BACKUP_COUNT", "5")),
+            compress_rotated=cls._parse_bool_env("STRUCTURED_LOG_COMPRESS", "true"),
+            archive_old_logs=cls._parse_bool_env("STRUCTURED_LOG_ARCHIVE", "true"),
+            archive_after_days=int(os.getenv("STRUCTURED_LOG_ARCHIVE_DAYS", "30")),
+            archive_directory=os.getenv("STRUCTURED_LOG_ARCHIVE_DIR"),
+            async_compression=cls._parse_bool_env("STRUCTURED_LOG_ASYNC_COMPRESS", "true"),
+        )
+
+    @classmethod
+    def _create_syslog_config_from_env(cls) -> SyslogConfig:
+        """Create syslog configuration from environment variables"""
+        return SyslogConfig(
+            host=os.getenv("STRUCTURED_LOG_SYSLOG_HOST", "localhost"),
+            port=int(os.getenv("STRUCTURED_LOG_SYSLOG_PORT", "514")),
+            facility=int(os.getenv("STRUCTURED_LOG_SYSLOG_FACILITY", "16")),
+            rfc_format=os.getenv("STRUCTURED_LOG_SYSLOG_RFC", "3164"),
+            app_name=os.getenv("STRUCTURED_LOG_APP_NAME", "python-app"),
+            use_ssl=cls._parse_bool_env("STRUCTURED_LOG_SYSLOG_SSL"),
+        )
+
+    @classmethod
+    def _create_http_config_from_env(cls) -> HTTPConfig:
+        """Create HTTP configuration from environment variables"""
+        return HTTPConfig(
+            url=os.getenv("STRUCTURED_LOG_HTTP_URL", "http://localhost:8080/logs"),
+            method=os.getenv("STRUCTURED_LOG_HTTP_METHOD", "POST"),
+            auth_type=os.getenv("STRUCTURED_LOG_HTTP_AUTH", "none"),
+            token=os.getenv("STRUCTURED_LOG_HTTP_TOKEN"),
+            api_key=os.getenv("STRUCTURED_LOG_HTTP_API_KEY"),
+            batch_size=int(os.getenv("STRUCTURED_LOG_HTTP_BATCH_SIZE", "10")),
+        )
+
+    @classmethod
+    def _create_socket_config_from_env(cls) -> SocketConfig:
+        """Create socket configuration from environment variables"""
+        return SocketConfig(
+            host=os.getenv("STRUCTURED_LOG_SOCKET_HOST", "localhost"),
+            port=int(os.getenv("STRUCTURED_LOG_SOCKET_PORT", "5140")),
+            protocol=os.getenv("STRUCTURED_LOG_SOCKET_PROTOCOL", "tcp"),
+            keep_alive=cls._parse_bool_env("STRUCTURED_LOG_SOCKET_KEEPALIVE", "true"),
+        )
+
+    @classmethod
+    def _create_network_config_from_env(cls) -> Optional[NetworkHandlerConfig]:
+        """Create network configuration from environment variables"""
+        output_type = os.getenv("STRUCTURED_LOG_OUTPUT", "console").lower()
+        if "network" not in output_type:
+            return None
+
+        network_type = os.getenv("STRUCTURED_LOG_NETWORK_TYPE", "syslog").lower()
+        
+        if network_type == "syslog":
+            return cls._create_syslog_config_from_env()
+        elif network_type == "http":
+            return cls._create_http_config_from_env()
+        elif network_type == "socket":
+            return cls._create_socket_config_from_env()
+        
+        return None
+
+    @classmethod
     def from_env(cls) -> "LoggerConfig":
         """Create configuration from environment variables"""
         formatter_type = os.getenv("STRUCTURED_LOG_FORMATTER", "json").lower()
         if formatter_type not in ["json", "csv", "plain"]:
             formatter_type = "json"
 
-        # Create filter config if filtering is enabled
-        filter_config = None
-        if os.getenv("STRUCTURED_LOG_FILTERING", "false").lower() == "true":
-            sample_rate = float(os.getenv("STRUCTURED_LOG_SAMPLE_RATE", "1.0"))
-            max_per_second = os.getenv("STRUCTURED_LOG_MAX_PER_SECOND")
-
-            filters = []
-
-            # Add level filter
-            filters.append(
-                LevelFilter(min_level=os.getenv("STRUCTURED_LOG_LEVEL", "INFO"))
-            )
-
-            # Add sampling filter if configured
-            if sample_rate < 1.0 or max_per_second:
-                filters.append(
-                    SamplingFilter(
-                        sample_rate=sample_rate,
-                        strategy=os.getenv(
-                            "STRUCTURED_LOG_SAMPLING_STRATEGY", "level_based"
-                        ),
-                        max_per_second=int(max_per_second) if max_per_second else None,
-                    )
-                )
-
-            filter_config = FilterConfig(
-                enabled=True,
-                filters=filters,
-                collect_metrics=os.getenv(
-                    "STRUCTURED_LOG_COLLECT_METRICS", "true"
-                ).lower()
-                == "true",
-            )
-
-        # Create file config if file output is enabled
-        file_config = None
-        output_type = os.getenv("STRUCTURED_LOG_OUTPUT", "console").lower()
-
-        if "file" in output_type:
-            file_config = FileHandlerConfig(
-                filename=os.getenv("STRUCTURED_LOG_FILENAME", "app.log"),
-                max_bytes=int(
-                    os.getenv("STRUCTURED_LOG_MAX_BYTES", "10485760")
-                ),  # 10MB
-                backup_count=int(os.getenv("STRUCTURED_LOG_BACKUP_COUNT", "5")),
-                compress_rotated=os.getenv("STRUCTURED_LOG_COMPRESS", "true").lower()
-                == "true",
-                archive_old_logs=os.getenv("STRUCTURED_LOG_ARCHIVE", "true").lower()
-                == "true",
-                archive_after_days=int(os.getenv("STRUCTURED_LOG_ARCHIVE_DAYS", "30")),
-                archive_directory=os.getenv("STRUCTURED_LOG_ARCHIVE_DIR"),
-                async_compression=os.getenv(
-                    "STRUCTURED_LOG_ASYNC_COMPRESS", "true"
-                ).lower()
-                == "true",
-            )
-
-        # Create network config if network output is enabled
-        network_config = None
-        if "network" in output_type:
-            network_type = os.getenv("STRUCTURED_LOG_NETWORK_TYPE", "syslog").lower()
-
-            if network_type == "syslog":
-                network_config = SyslogConfig(
-                    host=os.getenv("STRUCTURED_LOG_SYSLOG_HOST", "localhost"),
-                    port=int(os.getenv("STRUCTURED_LOG_SYSLOG_PORT", "514")),
-                    facility=int(os.getenv("STRUCTURED_LOG_SYSLOG_FACILITY", "16")),
-                    rfc_format=os.getenv("STRUCTURED_LOG_SYSLOG_RFC", "3164"),
-                    app_name=os.getenv("STRUCTURED_LOG_APP_NAME", "python-app"),
-                    use_ssl=os.getenv("STRUCTURED_LOG_SYSLOG_SSL", "false").lower()
-                    == "true",
-                )
-            elif network_type == "http":
-                network_config = HTTPConfig(
-                    url=os.getenv(
-                        "STRUCTURED_LOG_HTTP_URL", "http://localhost:8080/logs"
-                    ),
-                    method=os.getenv("STRUCTURED_LOG_HTTP_METHOD", "POST"),
-                    auth_type=os.getenv("STRUCTURED_LOG_HTTP_AUTH", "none"),
-                    token=os.getenv("STRUCTURED_LOG_HTTP_TOKEN"),
-                    api_key=os.getenv("STRUCTURED_LOG_HTTP_API_KEY"),
-                    batch_size=int(os.getenv("STRUCTURED_LOG_HTTP_BATCH_SIZE", "10")),
-                )
-            elif network_type == "socket":
-                network_config = SocketConfig(
-                    host=os.getenv("STRUCTURED_LOG_SOCKET_HOST", "localhost"),
-                    port=int(os.getenv("STRUCTURED_LOG_SOCKET_PORT", "5140")),
-                    protocol=os.getenv("STRUCTURED_LOG_SOCKET_PROTOCOL", "tcp"),
-                    keep_alive=os.getenv(
-                        "STRUCTURED_LOG_SOCKET_KEEPALIVE", "true"
-                    ).lower()
-                    == "true",
-                )
-
         return cls(
             log_level=os.getenv("STRUCTURED_LOG_LEVEL", "INFO"),
-            include_timestamp=os.getenv("STRUCTURED_LOG_TIMESTAMP", "true").lower()
-            == "true",
-            include_request_id=os.getenv("STRUCTURED_LOG_REQUEST_ID", "true").lower()
-            == "true",
-            include_user_context=os.getenv(
-                "STRUCTURED_LOG_USER_CONTEXT", "true"
-            ).lower()
-            == "true",
+            include_timestamp=cls._parse_bool_env("STRUCTURED_LOG_TIMESTAMP", "true"),
+            include_request_id=cls._parse_bool_env("STRUCTURED_LOG_REQUEST_ID", "true"),
+            include_user_context=cls._parse_bool_env("STRUCTURED_LOG_USER_CONTEXT", "true"),
             formatter_type=formatter_type,
-            filter_config=filter_config,
-            output_type=output_type,
-            file_config=file_config,
-            network_config=network_config,
+            filter_config=cls._create_filter_config_from_env(),
+            output_type=os.getenv("STRUCTURED_LOG_OUTPUT", "console").lower(),
+            file_config=cls._create_file_config_from_env(),
+            network_config=cls._create_network_config_from_env(),
         )
 
 
