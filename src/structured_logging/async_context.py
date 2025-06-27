@@ -21,6 +21,34 @@ from .context import (
 
 
 @asynccontextmanager
+def _ensure_request_id(request_id: Optional[str]) -> None:
+    """Ensure request ID is set, generate if needed"""
+    if request_id is not None:
+        set_request_id(request_id)
+    else:
+        # Always generate new request ID for new context
+        set_request_id(str(uuid.uuid4()))
+
+
+def _set_user_context_fields(user_id: Optional[str], tenant_id: Optional[str]) -> None:
+    """Set user context fields if provided"""
+    if user_id is not None or tenant_id is not None:
+        user_context = {}
+        if user_id is not None:
+            user_context["user_id"] = user_id
+        if tenant_id is not None:
+            user_context["tenant_id"] = tenant_id
+        set_user_context(user_context)
+
+
+def _merge_custom_context(custom_fields: Dict[str, Any]) -> None:
+    """Merge custom fields with existing context"""
+    if custom_fields:
+        current_custom = get_custom_context() or {}
+        updated_custom = {**current_custom, **custom_fields}
+        set_custom_context(updated_custom)
+
+
 async def async_request_context(
     user_id: Optional[str] = None,
     tenant_id: Optional[str] = None,
@@ -49,31 +77,10 @@ async def async_request_context(
     get_custom_context()
 
     try:
-        # Set request ID (generate if not provided)
-        if request_id is not None:
-            set_request_id(request_id)
-        elif request_id is None:
-            # Always generate new request ID for new context
-            set_request_id(str(uuid.uuid4()))
-
-        # Set user context if provided
-        if user_id is not None or tenant_id is not None:
-            user_context = {}
-            if user_id is not None:
-                user_context["user_id"] = user_id
-            if tenant_id is not None:
-                user_context["tenant_id"] = tenant_id
-            set_user_context(user_context)
-
-        # Set custom context fields
-        if custom_fields:
-            # Merge with existing custom context
-            current_custom = get_custom_context() or {}
-            updated_custom = {**current_custom, **custom_fields}
-            set_custom_context(updated_custom)
-
+        _ensure_request_id(request_id)
+        _set_user_context_fields(user_id, tenant_id)
+        _merge_custom_context(custom_fields)
         yield
-
     finally:
         # Context vars automatically handle restoration in async contexts
         # No manual restoration needed due to contextvars behavior
