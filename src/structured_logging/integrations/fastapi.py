@@ -40,92 +40,93 @@ class FastAPILoggingMiddleware(BaseHTTPMiddleware):
         self.config = config
         self.logger = get_logger(config.logger_name, config.logger_config)
 
-    async def dispatch(self, request: Request, call_next: Callable) -> Response:
-        """Process request and response with logging"""
+    def _should_skip_request(self, request: Request) -> bool:
+        """Check if request should be skipped for logging"""
+        return (
+            request.url.path in self.config.exclude_paths
+            or request.method in self.config.exclude_methods
+        )
 
-        # Skip excluded paths
-        if request.url.path in self.config.exclude_paths:
-            return await call_next(request)
-
-        # Skip excluded methods
-        if request.method in self.config.exclude_methods:
-            return await call_next(request)
-
-        # Generate request ID
-        request_id = str(uuid.uuid4())
-        start_time = time.time()
-
-        # Extract request info
-        request_info = await self._extract_request_info(request)
-        request_info["request_id"] = request_id
-
-        # Log request
+    def _log_request_start(self, request: Request, request_info: Dict[str, Any]) -> None:
+        """Log the start of a request"""
         if self.config.log_requests:
             self.logger.info(
                 f"Request started: {request.method} {request.url.path}",
                 extra={f"ctx_{k}": v for k, v in request_info.items() if v is not None},
             )
 
-        # Process request
+    def _log_request_exception(self, request: Request, exception: Exception, request_info: Dict[str, Any]) -> None:
+        """Log request exception"""
+        error_info = request_info.copy()
+        error_info.update({"exception": str(exception), "exception_type": type(exception).__name__})
+        
+        self.logger.error(
+            f"Request failed: {request.method} {request.url.path} - {str(exception)}",
+            extra={f"ctx_{k}": v for k, v in error_info.items() if v is not None},
+        )
+
+    async def _log_request_completion(
+        self,
+        request: Request,
+        response: Optional[Response],
+        request_info: Dict[str, Any],
+        duration_ms: float,
+        exception_occurred: bool
+    ) -> None:
+        """Log request completion with response details"""
+        response_info = {}
+        if response is not None:
+            response_info = await self._extract_response_info(response)
+
+        should_log = self._should_log_request(response, duration_ms, exception_occurred)
+        
+        if should_log and self.config.log_responses:
+            log_level = self._get_log_level_for_response(response, exception_occurred)
+            
+            complete_info = request_info.copy()
+            complete_info.update(response_info)
+            complete_info["duration_ms"] = duration_ms
+            
+            if exception_occurred:
+                message = f"Request failed: {request.method} {request.url.path}"
+            else:
+                status_code = getattr(response, "status_code", "unknown")
+                message = f"Request completed: {request.method} {request.url.path} - {status_code}"
+            
+            log_method = getattr(self.logger, log_level)
+            log_method(
+                message,
+                extra={f"ctx_{k}": v for k, v in complete_info.items() if v is not None},
+            )
+
+    async def dispatch(self, request: Request, call_next: Callable) -> Response:
+        """Process request and response with logging"""
+        if self._should_skip_request(request):
+            return await call_next(request)
+
+        request_id = str(uuid.uuid4())
+        start_time = time.time()
+        
+        request_info = await self._extract_request_info(request)
+        request_info["request_id"] = request_id
+        
+        self._log_request_start(request, request_info)
+        
         exception_occurred = False
         response = None
-
+        
         try:
             response = await call_next(request)
         except Exception as e:
             exception_occurred = True
-
-            # Log exception
-            error_info = request_info.copy()
-            error_info.update({"exception": str(e), "exception_type": type(e).__name__})
-
-            self.logger.error(
-                f"Request failed: {request.method} {request.url.path} - {str(e)}",
-                extra={f"ctx_{k}": v for k, v in error_info.items() if v is not None},
-            )
-            raise  # Re-raise the exception
-
+            self._log_request_exception(request, e, request_info)
+            raise
         finally:
-            # Calculate duration
             duration_ms = (time.time() - start_time) * 1000
-
-            # Extract response info if response exists
-            response_info = {}
-            if response is not None:
-                response_info = await self._extract_response_info(response)
-
-            # Determine if we should log this request
-            should_log = self._should_log_request(
-                response, duration_ms, exception_occurred
+            await self._log_request_completion(
+                request, response, request_info, duration_ms, exception_occurred
             )
-
-            if should_log and self.config.log_responses:
-                # Determine log level based on status code
-                log_level = self._get_log_level_for_response(
-                    response, exception_occurred
-                )
-
-                # Create complete log info
-                complete_info = request_info.copy()
-                complete_info.update(response_info)
-                complete_info["duration_ms"] = duration_ms
-
-                # Create log message
-                if exception_occurred:
-                    message = f"Request failed: {request.method} {request.url.path}"
-                else:
-                    status_code = getattr(response, "status_code", "unknown")
-                    message = f"Request completed: {request.method} {request.url.path} - {status_code}"
-
-                # Log response using the appropriate level
-                log_method = getattr(self.logger, log_level)
-                log_method(
-                    message,
-                    extra={
-                        f"ctx_{k}": v for k, v in complete_info.items() if v is not None
-                    },
-                )
-
+        
         return response
 
     async def _extract_request_info(self, request: Request) -> Dict[str, Any]:
