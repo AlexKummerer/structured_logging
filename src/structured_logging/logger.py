@@ -76,6 +76,67 @@ def get_logger(name: str, config: Optional[LoggerConfig] = None) -> logging.Logg
     return logger
 
 
+def _collect_request_context(config: LoggerConfig) -> Dict[str, Any]:
+    """Collect request-related context"""
+    context = {}
+    
+    if config.include_request_id:
+        req_id = get_request_id()
+        if req_id:
+            context["request_id"] = req_id
+            
+    if config.include_user_context:
+        user_ctx = get_user_context()
+        if user_ctx:
+            context.update({k: v for k, v in user_ctx.items() if v is not None})
+            
+    return context
+
+
+def _collect_all_context(config: LoggerConfig, extra: Dict[str, Any]) -> Dict[str, Any]:
+    """Collect all context including request, custom, and extra"""
+    context = _collect_request_context(config)
+    
+    # Custom context
+    custom_ctx = get_custom_context()
+    if custom_ctx:
+        context.update({k: v for k, v in custom_ctx.items() if v is not None})
+    
+    # Extra context
+    if extra:
+        context.update({k: v for k, v in extra.items() if v is not None})
+        
+    return context
+
+
+def _apply_filters(logger: logging.Logger, level: str, message: str, config: LoggerConfig, context: Dict[str, Any]) -> bool:
+    """Apply filtering if configured"""
+    if not (config.filter_config and config.filter_config.enabled):
+        return True
+        
+    # Get or create filter engine
+    filter_id = id(config.filter_config)
+    if filter_id not in _filter_engines:
+        _filter_engines[filter_id] = FilterEngine(config.filter_config)
+
+    filter_engine = _filter_engines[filter_id]
+
+    # Create LogRecord for filtering
+    record = logging.LogRecord(
+        name=logger.name,
+        level=getattr(logging, level.upper()),
+        pathname="",
+        lineno=0,
+        msg=message,
+        args=(),
+        exc_info=None,
+    )
+
+    # Apply filters
+    filter_result = filter_engine.should_log(record, context)
+    return filter_result.should_log
+
+
 def log_with_context(
     logger: logging.Logger,
     level: str,
@@ -85,58 +146,16 @@ def log_with_context(
 ) -> bool:
     """Log with automatic context injection and filtering - optimized version"""
     config = config or get_default_config()
-    context: Dict[str, Any] = {}
-
-    # Optimized: Batch context retrieval to minimize context variable lookups
-    if config.include_request_id or config.include_user_context:
-        # Single context variable access
-        req_id = get_request_id() if config.include_request_id else None
-        user_ctx = get_user_context() if config.include_user_context else {}
-
-        if req_id:
-            context["request_id"] = req_id
-
-        if user_ctx:
-            # Optimized: Use dict comprehension for better performance
-            context.update({k: v for k, v in user_ctx.items() if v is not None})
-
-    # Custom context - only access if likely to have data
-    custom_ctx = get_custom_context()
-    if custom_ctx:
-        context.update({k: v for k, v in custom_ctx.items() if v is not None})
-
-    # Extra context - optimized dict comprehension
-    if extra:
-        context.update({k: v for k, v in extra.items() if v is not None})
-
-    # Apply filtering if configured
-    if config.filter_config and config.filter_config.enabled:
-        # Get or create filter engine
-        filter_id = id(config.filter_config)
-        if filter_id not in _filter_engines:
-            _filter_engines[filter_id] = FilterEngine(config.filter_config)
-
-        filter_engine = _filter_engines[filter_id]
-
-        # Create LogRecord for filtering
-        record = logging.LogRecord(
-            name=logger.name,
-            level=getattr(logging, level.upper()),
-            pathname="",
-            lineno=0,
-            msg=message,
-            args=(),
-            exc_info=None,
-        )
-
-        # Apply filters
-        filter_result = filter_engine.should_log(record, context)
-        if not filter_result.should_log:
-            return False  # Log was filtered out
-
-    # Convert context back to ctx_ prefixed format for compatibility
+    
+    # Collect all context
+    context = _collect_all_context(config, extra)
+    
+    # Apply filtering
+    if not _apply_filters(logger, level, message, config, context):
+        return False
+    
+    # Convert context to ctx_ prefixed format and log
     ctx_context = {f"ctx_{k}": v for k, v in context.items()}
-
     getattr(logger, level)(message, extra=ctx_context)
     return True
 
