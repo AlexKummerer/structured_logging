@@ -65,6 +65,14 @@ class FastAPILoggingMiddleware(BaseHTTPMiddleware):
             extra={f"ctx_{k}": v for k, v in error_info.items() if v is not None},
         )
 
+    def _create_completion_message(self, request: Request, response: Optional[Response], exception_occurred: bool) -> str:
+        """Create log message for request completion"""
+        if exception_occurred:
+            return f"Request failed: {request.method} {request.url.path}"
+        else:
+            status_code = getattr(response, "status_code", "unknown")
+            return f"Request completed: {request.method} {request.url.path} - {status_code}"
+
     async def _log_request_completion(
         self,
         request: Request,
@@ -87,11 +95,7 @@ class FastAPILoggingMiddleware(BaseHTTPMiddleware):
             complete_info.update(response_info)
             complete_info["duration_ms"] = duration_ms
             
-            if exception_occurred:
-                message = f"Request failed: {request.method} {request.url.path}"
-            else:
-                status_code = getattr(response, "status_code", "unknown")
-                message = f"Request completed: {request.method} {request.url.path} - {status_code}"
+            message = self._create_completion_message(request, response, exception_occurred)
             
             log_method = getattr(self.logger, log_level)
             log_method(
