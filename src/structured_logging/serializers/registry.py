@@ -45,80 +45,76 @@ class TypeRegistry:
         self._serializers: Dict[Type, Callable[[Any, SerializationConfig], Any]] = {}
         self._setup_default_serializers()
 
-    def _setup_default_serializers(self) -> None:
-        """Setup built-in serializers for common types"""
-
-        # Date and time types
+    def _register_datetime_serializers(self) -> None:
+        """Register date and time serializers"""
         self.register(datetime, self._serialize_datetime)
         self.register(date, self._serialize_date)
         self.register(time, self._serialize_time)
         self.register(timedelta, self._serialize_timedelta)
 
-        # Numeric types
+    def _register_basic_serializers(self) -> None:
+        """Register basic type serializers"""
         self.register(Decimal, self._serialize_decimal)
         self.register(complex, self._serialize_complex)
-
-        # UUID
         self.register(UUID, self._serialize_uuid)
-
-        # Path objects
         self.register(Path, self._serialize_path)
         self.register(PurePath, self._serialize_path)
-
-        # Collections
         self.register(set, self._serialize_set)
         self.register(frozenset, self._serialize_set)
-
-        # Enum
         self.register(Enum, self._serialize_enum)
-
-        # Bytes
         self.register(bytes, self._serialize_bytes)
         self.register(bytearray, self._serialize_bytes)
 
-        # Scientific types (if available)
-        if HAS_NUMPY:
-            # NumPy scalar types
-            self.register(np.integer, _serialize_numpy_scalar)
-            self.register(np.floating, _serialize_numpy_scalar)
-            self.register(np.complexfloating, _serialize_numpy_scalar)
-            self.register(np.bool_, _serialize_numpy_scalar)
-            self.register(np.str_, _serialize_numpy_scalar)
+    def _register_numpy_serializers(self) -> None:
+        """Register NumPy type serializers"""
+        if not HAS_NUMPY:
+            return
+        
+        self.register(np.integer, _serialize_numpy_scalar)
+        self.register(np.floating, _serialize_numpy_scalar)
+        self.register(np.complexfloating, _serialize_numpy_scalar)
+        self.register(np.bool_, _serialize_numpy_scalar)
+        self.register(np.str_, _serialize_numpy_scalar)
+        self.register(np.ndarray, _serialize_numpy_array)
+        self.register(np.matrix, _serialize_numpy_matrix)
+        
+        if hasattr(np, "ma"):
+            self.register(np.ma.MaskedArray, _serialize_numpy_masked_array)
 
-            # NumPy array types
-            self.register(np.ndarray, _serialize_numpy_array)
-            self.register(np.matrix, _serialize_numpy_matrix)
+    def _register_pandas_serializers(self) -> None:
+        """Register Pandas type serializers"""
+        if not HAS_PANDAS:
+            return
+            
+        self.register(pd.DataFrame, _serialize_dataframe)
+        self.register(pd.Series, _serialize_series)
+        self.register(pd.Timestamp, _serialize_pandas_timestamp)
+        self.register(pd.Categorical, _serialize_pandas_categorical)
 
-            # NumPy special arrays
-            if hasattr(np, "ma"):
-                self.register(np.ma.MaskedArray, _serialize_numpy_masked_array)
+    def _register_scipy_serializers(self) -> None:
+        """Register SciPy type serializers"""
+        if not HAS_SCIPY:
+            return
+            
+        sparse_types = [
+            "csr_matrix", "csc_matrix", "coo_matrix", "bsr_matrix",
+            "lil_matrix", "dok_matrix", "dia_matrix"
+        ]
+        
+        for sparse_type in sparse_types:
+            if hasattr(scipy.sparse, sparse_type):
+                self.register(
+                    getattr(scipy.sparse, sparse_type),
+                    _serialize_scipy_sparse_matrix,
+                )
 
-        if HAS_PANDAS:
-            # Pandas core types
-            self.register(pd.DataFrame, _serialize_dataframe)
-            self.register(pd.Series, _serialize_series)
-            self.register(pd.Timestamp, _serialize_pandas_timestamp)
-
-            # Pandas data types
-            self.register(pd.Categorical, _serialize_pandas_categorical)
-
-        # SciPy types (if available)
-        if HAS_SCIPY:
-            # Register common scipy sparse matrix types
-            for sparse_type in [
-                "csr_matrix",
-                "csc_matrix",
-                "coo_matrix",
-                "bsr_matrix",
-                "lil_matrix",
-                "dok_matrix",
-                "dia_matrix",
-            ]:
-                if hasattr(scipy.sparse, sparse_type):
-                    self.register(
-                        getattr(scipy.sparse, sparse_type),
-                        _serialize_scipy_sparse_matrix,
-                    )
+    def _setup_default_serializers(self) -> None:
+        """Setup built-in serializers for common types"""
+        self._register_datetime_serializers()
+        self._register_basic_serializers()
+        self._register_numpy_serializers()
+        self._register_pandas_serializers()
+        self._register_scipy_serializers()
 
     def register(
         self, type_class: Type, serializer: Callable[[Any, SerializationConfig], Any]
