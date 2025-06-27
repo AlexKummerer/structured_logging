@@ -16,6 +16,65 @@ _formatter_cache: Dict[str, logging.Formatter] = {}
 _filter_engines: Dict[int, FilterEngine] = {}
 
 
+def _get_formatter_cache_key(config: LoggerConfig) -> str:
+    """Generate cache key for formatter"""
+    return f"{config.formatter_type}_{config.include_timestamp}_{config.include_request_id}_{config.include_user_context}"
+
+
+def _get_or_create_formatter(config: LoggerConfig) -> logging.Formatter:
+    """Get formatter from cache or create new one"""
+    cache_key = _get_formatter_cache_key(config)
+    
+    if cache_key not in _formatter_cache:
+        if config.formatter_type == "csv":
+            formatter = CSVFormatter(config)
+        elif config.formatter_type == "plain":
+            formatter = PlainTextFormatter(config)
+        else:  # default to json
+            formatter = StructuredFormatter(config)
+        _formatter_cache[cache_key] = formatter
+    
+    return _formatter_cache[cache_key]
+
+
+def _add_console_handler(logger: logging.Logger, config: LoggerConfig, formatter: logging.Formatter) -> None:
+    """Add console handler if required"""
+    if "console" in config.output_type:
+        console_handler = logging.StreamHandler(sys.stdout)
+        console_handler.setFormatter(formatter)
+        logger.addHandler(console_handler)
+
+
+def _add_file_handler(logger: logging.Logger, config: LoggerConfig, formatter: logging.Formatter) -> None:
+    """Add file handler if required"""
+    if "file" in config.output_type and config.file_config:
+        file_handler = RotatingFileHandler(config.file_config)
+        file_handler.setFormatter(formatter)
+        logger.addHandler(file_handler)
+
+
+def _create_network_handler(network_config: Any) -> logging.Handler:
+    """Create appropriate network handler based on config type"""
+    if hasattr(network_config, "facility"):  # SyslogConfig
+        return SyslogHandler(network_config)
+    elif hasattr(network_config, "url"):  # HTTPConfig
+        return HTTPHandler(network_config)
+    elif hasattr(network_config, "protocol"):  # SocketConfig
+        return SocketHandler(network_config)
+    else:
+        # Default to syslog
+        syslog_config = SyslogConfig(host=network_config.host, port=network_config.port)
+        return SyslogHandler(syslog_config)
+
+
+def _add_network_handler(logger: logging.Logger, config: LoggerConfig, formatter: logging.Formatter) -> None:
+    """Add network handler if required"""
+    if "network" in config.output_type and config.network_config:
+        network_handler = _create_network_handler(config.network_config)
+        network_handler.setFormatter(formatter)
+        logger.addHandler(network_handler)
+
+
 def get_logger(name: str, config: Optional[LoggerConfig] = None) -> logging.Logger:
     """Create a structured logger with the given name"""
     logger = logging.getLogger(name)
@@ -23,54 +82,13 @@ def get_logger(name: str, config: Optional[LoggerConfig] = None) -> logging.Logg
     if not logger.handlers:
         config = config or get_default_config()
         logger.setLevel(getattr(logging, config.log_level.upper()))
-
-        # Performance optimization: Use cached formatter if available
-        cache_key = f"{config.formatter_type}_{config.include_timestamp}_{config.include_request_id}_{config.include_user_context}"
-
-        if cache_key not in _formatter_cache:
-            # Select formatter based on config
-            if config.formatter_type == "csv":
-                formatter = CSVFormatter(config)
-            elif config.formatter_type == "plain":
-                formatter = PlainTextFormatter(config)
-            else:  # default to json
-                formatter = StructuredFormatter(config)
-
-            _formatter_cache[cache_key] = formatter
-        else:
-            formatter = _formatter_cache[cache_key]
-
-        # Add console handler if required
-        if "console" in config.output_type:
-            console_handler = logging.StreamHandler(sys.stdout)
-            console_handler.setFormatter(formatter)
-            logger.addHandler(console_handler)
-
-        # Add file handler if required
-        if "file" in config.output_type and config.file_config:
-            file_handler = RotatingFileHandler(config.file_config)
-            file_handler.setFormatter(formatter)
-            logger.addHandler(file_handler)
-
-        # Add network handler if required
-        if "network" in config.output_type and config.network_config:
-            # Determine handler type based on config
-            if hasattr(config.network_config, "facility"):  # SyslogConfig
-                network_handler = SyslogHandler(config.network_config)
-            elif hasattr(config.network_config, "url"):  # HTTPConfig
-                network_handler = HTTPHandler(config.network_config)
-            elif hasattr(config.network_config, "protocol"):  # SocketConfig
-                network_handler = SocketHandler(config.network_config)
-            else:
-                # Default to syslog
-                syslog_config = SyslogConfig(
-                    host=config.network_config.host, port=config.network_config.port
-                )
-                network_handler = SyslogHandler(syslog_config)
-
-            network_handler.setFormatter(formatter)
-            logger.addHandler(network_handler)
-
+        
+        formatter = _get_or_create_formatter(config)
+        
+        _add_console_handler(logger, config, formatter)
+        _add_file_handler(logger, config, formatter)
+        _add_network_handler(logger, config, formatter)
+        
         logger.propagate = True
 
     return logger
