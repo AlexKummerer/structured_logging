@@ -330,6 +330,38 @@ def add_structured_logging(
     return app
 
 
+def _create_filter_config_for_fastapi(log_level: str, enable_filtering: bool, sample_rate: float) -> Optional[FilterConfig]:
+    """Create filter configuration for FastAPI logging"""
+    if not enable_filtering:
+        return None
+        
+    filters = [LevelFilter(min_level=log_level)]
+    if sample_rate < 1.0:
+        filters.append(
+            SamplingFilter(
+                sample_rate=sample_rate,
+                strategy="level_based",  # Better for web apps
+                max_per_second=1000,  # Reasonable default for web apps
+            )
+        )
+
+    return FilterConfig(enabled=True, filters=filters, collect_metrics=True)
+
+
+def _create_file_config_for_fastapi(output_type: str, filename: Optional[str]) -> Optional[FileHandlerConfig]:
+    """Create file handler configuration for FastAPI logging"""
+    if output_type not in ["file", "both"]:
+        return None
+        
+    return FileHandlerConfig(
+        filename=filename or "fastapi.log",
+        max_bytes=50 * 1024 * 1024,  # 50MB for web apps
+        backup_count=10,
+        compress_rotated=True,
+        archive_old_logs=True,
+    )
+
+
 def create_fastapi_logger_config(
     output_type: str = "console",
     log_level: str = "INFO",
@@ -350,34 +382,9 @@ def create_fastapi_logger_config(
     Returns:
         Configured LoggerConfig instance
     """
-    # Create filter config if enabled
-    filter_config = None
-    if enable_filtering:
-        filters = [LevelFilter(min_level=log_level)]
-        if sample_rate < 1.0:
-            filters.append(
-                SamplingFilter(
-                    sample_rate=sample_rate,
-                    strategy="level_based",  # Better for web apps
-                    max_per_second=1000,  # Reasonable default for web apps
-                )
-            )
-
-        filter_config = FilterConfig(
-            enabled=True, filters=filters, collect_metrics=True
-        )
-
-    # Create file config if needed
-    file_config = None
-    if output_type in ["file", "both"]:
-        file_config = FileHandlerConfig(
-            filename=filename or "fastapi.log",
-            max_bytes=50 * 1024 * 1024,  # 50MB for web apps
-            backup_count=10,
-            compress_rotated=True,
-            archive_old_logs=True,
-        )
-
+    filter_config = _create_filter_config_for_fastapi(log_level, enable_filtering, sample_rate)
+    file_config = _create_file_config_for_fastapi(output_type, filename)
+    
     return LoggerConfig(
         log_level=log_level,
         include_timestamp=True,
