@@ -6,7 +6,7 @@ import inspect
 import time
 from dataclasses import is_dataclass
 from functools import wraps
-from typing import Any, Callable, Collection, Dict, List, Optional, get_type_hints
+from typing import Any, Callable, Collection, Dict, List, Optional, Union, get_type_hints
 
 from .config import SerializationConfig
 
@@ -124,68 +124,89 @@ class SchemaValidator:
         finally:
             self._validation_stats["validation_time"] += time.perf_counter() - start_time
 
-    def _validate_field(
-        self, field: str, value: Any, constraints: Dict[str, Any]
-    ) -> List[str]:
+    def _validate_type(self, field: str, value: Any, expected_type: str) -> Optional[str]:
+        """Validate field type"""
+        if expected_type and expected_type != "any":
+            if not self._check_type(value, expected_type):
+                return f"Field '{field}' expected type {expected_type}, got {type(value).__name__}"
+        return None
+
+    def _validate_string_constraints(self, field: str, value: str, constraints: Dict[str, Any]) -> List[str]:
+        """Validate string constraints"""
+        errors = []
+        
+        max_length = constraints.get("max_length")
+        if max_length and len(value) > max_length:
+            errors.append(f"Field '{field}' exceeds max length of {max_length} characters")
+
+        min_length = constraints.get("min_length")
+        if min_length and len(value) < min_length:
+            errors.append(f"Field '{field}' below min length of {min_length} characters")
+
+        pattern = constraints.get("pattern")
+        if pattern:
+            import re
+            if not re.match(pattern, value):
+                errors.append(f"Field '{field}' doesn't match pattern: {pattern}")
+                
+        return errors
+
+    def _validate_numeric_constraints(self, field: str, value: Union[int, float], constraints: Dict[str, Any]) -> List[str]:
+        """Validate numeric constraints"""
+        errors = []
+        
+        min_value = constraints.get("min_value")
+        if min_value is not None and value < min_value:
+            errors.append(f"Field '{field}' below minimum value of {min_value}")
+
+        max_value = constraints.get("max_value")
+        if max_value is not None and value > max_value:
+            errors.append(f"Field '{field}' exceeds maximum value of {max_value}")
+            
+        return errors
+
+    def _validate_collection_constraints(self, field: str, value: Collection, constraints: Dict[str, Any]) -> List[str]:
+        """Validate collection constraints"""
+        errors = []
+        
+        max_items = constraints.get("max_items")
+        if max_items and len(value) > max_items:
+            errors.append(f"Field '{field}' exceeds max items of {max_items}")
+
+        min_items = constraints.get("min_items")
+        if min_items and len(value) < min_items:
+            errors.append(f"Field '{field}' below min items of {min_items}")
+            
+        return errors
+
+    def _validate_enum_constraint(self, field: str, value: Any, allowed_values: List[Any]) -> Optional[str]:
+        """Validate enum constraint"""
+        if allowed_values and value not in allowed_values:
+            return f"Field '{field}' value not in allowed set: {allowed_values}"
+        return None
+
+    def _validate_field(self, field: str, value: Any, constraints: Dict[str, Any]) -> List[str]:
         """Validate a single field against constraints"""
         errors = []
 
         # Type validation
-        expected_type = constraints.get("type")
-        if expected_type and expected_type != "any":
-            if not self._check_type(value, expected_type):
-                errors.append(
-                    f"Field '{field}' expected type {expected_type}, got {type(value).__name__}"
-                )
-                return errors  # Skip other validations if type is wrong
+        type_error = self._validate_type(field, value, constraints.get("type"))
+        if type_error:
+            errors.append(type_error)
+            return errors  # Skip other validations if type is wrong
 
-        # String constraints
+        # Value-specific constraints
         if isinstance(value, str):
-            max_length = constraints.get("max_length")
-            if max_length and len(value) > max_length:
-                errors.append(
-                    f"Field '{field}' exceeds max length of {max_length} characters"
-                )
+            errors.extend(self._validate_string_constraints(field, value, constraints))
+        elif isinstance(value, (int, float)):
+            errors.extend(self._validate_numeric_constraints(field, value, constraints))
+        elif isinstance(value, (list, set, tuple)):
+            errors.extend(self._validate_collection_constraints(field, value, constraints))
 
-            min_length = constraints.get("min_length")
-            if min_length and len(value) < min_length:
-                errors.append(
-                    f"Field '{field}' below min length of {min_length} characters"
-                )
-
-            pattern = constraints.get("pattern")
-            if pattern:
-                import re
-
-                if not re.match(pattern, value):
-                    errors.append(f"Field '{field}' doesn't match pattern: {pattern}")
-
-        # Numeric constraints
-        if isinstance(value, (int, float)):
-            min_value = constraints.get("min_value")
-            if min_value is not None and value < min_value:
-                errors.append(f"Field '{field}' below minimum value of {min_value}")
-
-            max_value = constraints.get("max_value")
-            if max_value is not None and value > max_value:
-                errors.append(f"Field '{field}' exceeds maximum value of {max_value}")
-
-        # Collection constraints
-        if isinstance(value, (list, set, tuple)):
-            max_items = constraints.get("max_items")
-            if max_items and len(value) > max_items:
-                errors.append(f"Field '{field}' exceeds max items of {max_items}")
-
-            min_items = constraints.get("min_items")
-            if min_items and len(value) < min_items:
-                errors.append(f"Field '{field}' below min items of {min_items}")
-
-        # Enum constraints
-        allowed_values = constraints.get("enum")
-        if allowed_values and value not in allowed_values:
-            errors.append(
-                f"Field '{field}' value not in allowed set: {allowed_values}"
-            )
+        # Enum constraint
+        enum_error = self._validate_enum_constraint(field, value, constraints.get("enum"))
+        if enum_error:
+            errors.append(enum_error)
 
         return errors
 
