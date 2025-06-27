@@ -184,6 +184,60 @@ class LazySerializationManager:
         """Create a lazy dictionary"""
         return LazyDict(data or {})
 
+    def _ensure_globals(self) -> None:
+        """Ensure global variables are imported"""
+        global DEFAULT_CONFIG, _global_registry
+        if DEFAULT_CONFIG is None:
+            from .base import DEFAULT_CONFIG
+        if _global_registry is None:
+            from .registry import _global_registry
+
+    def _should_skip_lazy(self, obj: Any, config: SerializationConfig) -> bool:
+        """Check if lazy serialization should be skipped"""
+        if not config.enable_lazy_serialization:
+            return True
+            
+        # Don't use lazy for primitives
+        if isinstance(obj, (int, float, bool, type(None))):
+            return True
+            
+        return False
+
+    def _check_size_thresholds(self, obj: Any, config: SerializationConfig) -> bool:
+        """Check if object exceeds size thresholds"""
+        # For strings, check size threshold
+        if isinstance(obj, str):
+            return len(obj.encode("utf-8")) > config.lazy_threshold_bytes
+
+        # For collections, check item count threshold
+        if isinstance(obj, (dict, list, tuple, set)):
+            return len(obj) > config.lazy_threshold_items
+            
+        return False
+
+    def _check_special_cases(self, obj: Any, config: SerializationConfig) -> bool:
+        """Check special cases for lazy serialization"""
+        # Force lazy for detection if enabled
+        if config.force_lazy_for_detection and config.auto_detect_types:
+            if isinstance(obj, str) and len(obj) > 10:
+                return True
+
+        # Use lazy for custom objects that need serialization
+        serializer = _global_registry.get_serializer(obj)
+        if serializer is not None:
+            return True
+            
+        return False
+
+    def _estimate_object_size(self, obj: Any, config: SerializationConfig) -> bool:
+        """Estimate if object is large enough for lazy serialization"""
+        try:
+            obj_size = len(str(obj).encode("utf-8"))
+            return obj_size > config.lazy_threshold_bytes
+        except:
+            # If we can't estimate size, err on side of using lazy for unknown objects
+            return True
+
     def should_use_lazy(
         self, obj: Any, config: Optional[SerializationConfig] = None
     ) -> bool:
@@ -197,49 +251,19 @@ class LazySerializationManager:
         Returns:
             True if lazy serialization would be beneficial
         """
-        # Import here to avoid circular dependency
-        global DEFAULT_CONFIG, _global_registry
-        if DEFAULT_CONFIG is None:
-            from .base import DEFAULT_CONFIG
-        if _global_registry is None:
-            from .registry import _global_registry
-
+        self._ensure_globals()
         config = config or DEFAULT_CONFIG
 
-        # Check if lazy serialization is enabled
-        if not config.enable_lazy_serialization:
+        if self._should_skip_lazy(obj, config):
             return False
-
-        # Don't use lazy for primitives unless they're large strings
-        if isinstance(obj, (int, float, bool, type(None))):
-            return False
-
-        # For strings, check size threshold
-        if isinstance(obj, str):
-            return len(obj.encode("utf-8")) > config.lazy_threshold_bytes
-
-        # For collections, check item count threshold
-        if isinstance(obj, (dict, list, tuple, set)):
-            return len(obj) > config.lazy_threshold_items
-
-        # Force lazy for detection if enabled
-        if config.force_lazy_for_detection and config.auto_detect_types:
-            # Use lazy for objects that benefit from detection
-            if isinstance(obj, str) and len(obj) > 10:
-                return True
-
-        # Use lazy for custom objects that need serialization
-        serializer = _global_registry.get_serializer(obj)
-        if serializer is not None:
+            
+        if self._check_size_thresholds(obj, config):
             return True
-
-        # Estimate object size for other objects
-        try:
-            obj_size = len(str(obj).encode("utf-8"))
-            return obj_size > config.lazy_threshold_bytes
-        except:
-            # If we can't estimate size, err on side of using lazy for unknown objects
+            
+        if self._check_special_cases(obj, config):
             return True
+            
+        return self._estimate_object_size(obj, config)
 
     def wrap_if_beneficial(
         self, obj: Any, config: Optional[SerializationConfig] = None
