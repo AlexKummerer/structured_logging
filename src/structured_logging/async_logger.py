@@ -133,32 +133,40 @@ class AsyncLogProcessor:
         await self._wait_for_workers(timeout)
         self._final_stream_flush()
 
+    def _handle_queue_overflow(self) -> bool:
+        """Handle queue overflow when dropping is enabled"""
+        self._stats["dropped_entries"] += 1
+        if self.async_config.error_callback:
+            self.async_config.error_callback(
+                Exception("Log queue overflow, dropping log entry")
+            )
+        return False
+
+    async def _enqueue_with_drop(self, entry: AsyncLogEntry) -> bool:
+        """Try to enqueue with drop-on-overflow policy"""
+        try:
+            self.queue.put_nowait(entry)
+            return True
+        except asyncio.QueueFull:
+            return self._handle_queue_overflow()
+
+    async def _enqueue_with_timeout(self, entry: AsyncLogEntry) -> bool:
+        """Try to enqueue with timeout"""
+        await asyncio.wait_for(
+            self.queue.put(entry), timeout=self.async_config.queue_timeout
+        )
+        return True
+
     async def enqueue_log(self, entry: AsyncLogEntry) -> bool:
         """Enqueue a log entry for processing"""
         if not self.running:
             await self.start()
 
         try:
-            # Try to put entry in queue
             if self.async_config.drop_on_overflow:
-                # Non-blocking put, drop if queue is full
-                try:
-                    self.queue.put_nowait(entry)
-                    return True
-                except asyncio.QueueFull:
-                    self._stats["dropped_entries"] += 1
-                    if self.async_config.error_callback:
-                        self.async_config.error_callback(
-                            Exception("Log queue overflow, dropping log entry")
-                        )
-                    return False
+                return await self._enqueue_with_drop(entry)
             else:
-                # Blocking put with timeout
-                await asyncio.wait_for(
-                    self.queue.put(entry), timeout=self.async_config.queue_timeout
-                )
-                return True
-
+                return await self._enqueue_with_timeout(entry)
         except asyncio.TimeoutError:
             if self.async_config.error_callback:
                 self.async_config.error_callback(Exception("Log queue timeout"))
