@@ -52,6 +52,39 @@ class TypeDetector:
             "decimal": re.compile(r"^[+-]?\d+\.\d{2,}$"),  # Likely currency/precision
         }
 
+    def _should_skip_detection(self, obj: Any) -> bool:
+        """Check if type detection should be skipped for this object"""
+        if not self.config.auto_detect_types:
+            return True
+        # Skip if already a complex type that we handle
+        return not isinstance(obj, (str, int, float))
+
+    def _get_cache_key(self, obj: Any) -> tuple:
+        """Generate cache key for object"""
+        return (type(obj).__name__, str(obj)[:100])  # Limit cache key length
+
+    def _check_cache(self, cache_key: tuple) -> Optional[Callable]:
+        """Check cache for converter, update stats"""
+        if cache_key in self._cache:
+            self._cache_hits += 1
+            return self._cache[cache_key]
+        self._cache_misses += 1
+        return None
+
+    def _update_cache(self, cache_key: tuple, converter: Optional[Callable]) -> None:
+        """Update cache with converter if within size limit"""
+        if len(self._cache) < self.config.type_detection_cache_size:
+            self._cache[cache_key] = converter
+
+    def _apply_converter(self, obj: Any, converter: Optional[Callable]) -> Any:
+        """Apply converter to object, handle exceptions"""
+        if converter is None:
+            return obj
+        try:
+            return converter(obj)
+        except Exception:
+            return obj  # If conversion fails, return original
+
     def detect_and_convert(self, obj: Any) -> Any:
         """
         Detect type and auto-convert if appropriate
@@ -62,39 +95,17 @@ class TypeDetector:
         Returns:
             Original object or converted version
         """
-        if not self.config.auto_detect_types:
+        if self._should_skip_detection(obj):
             return obj
 
-        # Skip if already a complex type that we handle
-        if not isinstance(obj, (str, int, float)):
-            return obj
-
-        # Check cache first
-        cache_key = (type(obj).__name__, str(obj)[:100])  # Limit cache key length
-        if cache_key in self._cache:
-            self._cache_hits += 1
-            converter = self._cache[cache_key]
-            if converter is None:
-                return obj
-            return converter(obj)
-
-        self._cache_misses += 1
-
-        # Detect and convert
-        converter = self._detect_type_converter(obj)
-
-        # Cache the result (with size limit)
-        if len(self._cache) < self.config.type_detection_cache_size:
-            self._cache[cache_key] = converter
-
+        cache_key = self._get_cache_key(obj)
+        converter = self._check_cache(cache_key)
+        
         if converter is None:
-            return obj
-
-        try:
-            return converter(obj)
-        except Exception:
-            # If conversion fails, return original
-            return obj
+            converter = self._detect_type_converter(obj)
+            self._update_cache(cache_key, converter)
+        
+        return self._apply_converter(obj, converter)
 
     def _detect_type_converter(self, obj: Any) -> Optional[Callable]:
         """Detect appropriate type converter for an object"""
