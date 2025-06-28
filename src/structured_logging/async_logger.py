@@ -267,9 +267,8 @@ class AsyncLogProcessor:
             if self.async_config.error_callback:
                 self.async_config.error_callback(e)
 
-    async def _process_log_entry(self, entry: AsyncLogEntry) -> None:
-        """Process a single log entry with enhanced serialization"""
-        # Create LogRecord for formatter
+    def _create_log_record(self, entry: AsyncLogEntry) -> logging.LogRecord:
+        """Create LogRecord from AsyncLogEntry"""
         record = logging.LogRecord(
             name=entry.logger_name,
             level=getattr(logging, entry.level.upper()),
@@ -279,32 +278,36 @@ class AsyncLogProcessor:
             args=(),
             exc_info=None,
         )
-
-        # Set timestamp from entry
         record.created = entry.timestamp
+        return record
 
-        # Add context to record (already includes ctx_ prefix)
+    def _add_context_to_record(self, record: logging.LogRecord, entry: AsyncLogEntry) -> None:
+        """Add context data to log record"""
         for key, value in entry.context.items():
             setattr(record, key, value)
 
-        # Serialize complex extra data using the enhanced serialization system
+    def _serialize_extra_data(self, record: logging.LogRecord, entry: AsyncLogEntry) -> None:
+        """Serialize and add extra data to record"""
         for key, value in entry.extra.items():
             if value is not None:
                 try:
-                    # Use the enhanced serialization system for complex objects
                     serialized_value = serialize_for_logging(
                         value, self.serialization_config
                     )
                     setattr(record, f"ctx_{key}", serialized_value)
                 except Exception as e:
-                    # Fallback to string representation
                     setattr(record, f"ctx_{key}", str(value))
                     if self.async_config.error_callback:
                         self.async_config.error_callback(
                             Exception(f"Failed to serialize {key}: {e}")
                         )
 
-        # Format and write
+    async def _process_log_entry(self, entry: AsyncLogEntry) -> None:
+        """Process a single log entry with enhanced serialization"""
+        record = self._create_log_record(entry)
+        self._add_context_to_record(record, entry)
+        self._serialize_extra_data(record, entry)
+        
         formatted_message = self.formatter.format(record)
         self.stream.write(formatted_message + "\n")
 

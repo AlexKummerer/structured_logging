@@ -25,7 +25,7 @@ This document outlines the coding standards and best practices for the Structure
 - Use meaningful file names that reflect their purpose
 
 #### Function Length Limits
-- **Maximum function length: 20 lines**
+- **Maximum function length: ca. 20 lines**
 - Functions should be focused and do one thing
 - Extract complex logic into helper functions
 - Use early returns to reduce nesting
