@@ -86,15 +86,29 @@ from .network import (
 
 # Import cloud handlers if available
 try:
-    from .cloud import (
-        CloudHandlerConfig,
-        CloudLogHandler,
-        CloudWatchConfig,
-        CloudWatchHandler,
-    )
+    from .cloud import CloudHandlerConfig, CloudLogHandler
     _CLOUD_AVAILABLE = True
 except ImportError:
     _CLOUD_AVAILABLE = False
+
+# Import AWS handlers if available
+try:
+    from .cloud import CloudWatchConfig, CloudWatchHandler
+    _AWS_AVAILABLE = True
+except ImportError:
+    _AWS_AVAILABLE = False
+
+# Import GCP handlers if available  
+try:
+    from .cloud import (
+        GoogleCloudConfig,
+        GoogleCloudHandler,
+        StackdriverConfig,
+        StackdriverHandler,
+    )
+    _GCP_AVAILABLE = True
+except ImportError:
+    _GCP_AVAILABLE = False
 from .serializers import (
     EnhancedJSONEncoder,
     LazyDict,
@@ -219,7 +233,19 @@ __all__ = [
 if _CLOUD_AVAILABLE:
     __all__.extend([
         "CloudHandlerConfig",
-        "CloudLogHandler", 
+        "CloudLogHandler",
+    ])
+
+if _AWS_AVAILABLE:
+    __all__.extend([
         "CloudWatchConfig",
         "CloudWatchHandler",
+    ])
+
+if _GCP_AVAILABLE:
+    __all__.extend([
+        "GoogleCloudConfig",
+        "GoogleCloudHandler", 
+        "StackdriverConfig",
+        "StackdriverHandler",
     ])

@@ -10,18 +10,31 @@ Provides integration with major cloud logging services:
 from .base import CloudHandlerConfig, CloudLogHandler
 
 # Import cloud handlers when available
+__all__ = [
+    "CloudHandlerConfig",
+    "CloudLogHandler",
+]
+
+# AWS CloudWatch
 try:
     from .aws import CloudWatchConfig, CloudWatchHandler
-    
-    __all__ = [
-        "CloudHandlerConfig",
-        "CloudLogHandler",
-        "CloudWatchConfig", 
-        "CloudWatchHandler",
-    ]
+    __all__.extend(["CloudWatchConfig", "CloudWatchHandler"])
 except ImportError:
-    # AWS dependencies not installed
-    __all__ = [
-        "CloudHandlerConfig",
-        "CloudLogHandler",
-    ]
+    pass
+
+# Google Cloud Logging
+try:
+    from .gcp import (
+        GoogleCloudConfig,
+        GoogleCloudHandler,
+        StackdriverConfig,
+        StackdriverHandler,
+    )
+    __all__.extend([
+        "GoogleCloudConfig",
+        "GoogleCloudHandler",
+        "StackdriverConfig",
+        "StackdriverHandler",
+    ])
+except ImportError:
+    pass

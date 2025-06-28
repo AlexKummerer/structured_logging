@@ -293,18 +293,351 @@ config = CloudWatchConfig(
 )
 ```
 
-## Coming Soon
+## Google Cloud Logging (Stackdriver)
 
-### Google Cloud Logging
+### Installation
+
+To use Google Cloud Logging integration, install with the GCP extras:
+
+```bash
+pip install structured-logging[gcp]
+```
+
+This will install the required `google-cloud-logging` dependency.
+
+### Quick Start
+
+The simplest way to start logging to Google Cloud:
+
+```python
+from structured_logging.cloud.utils import create_google_cloud_logger
+
+# Create a Google Cloud logger
+logger = create_google_cloud_logger(
+    name="my_application",
+    project_id="my-project",  # Optional - auto-detected from environment
+    resource_type="gce_instance"
+)
+
+# Start logging
+logger.info("Application started")
+logger.error("An error occurred", extra={"error_code": "E001"})
+```
+
+### Configuration
+
+#### Basic Configuration
+
+```python
+from structured_logging import get_logger
+from structured_logging.cloud import GoogleCloudConfig, GoogleCloudHandler
+
+# Configure Google Cloud Logging
+config = GoogleCloudConfig(
+    project_id="my-project",  # Optional - uses GOOGLE_CLOUD_PROJECT env var
+    log_name="my-application",
+    resource_type="global",  # Or "gce_instance", "k8s_container", etc.
+    resource_labels={
+        "environment": "production",
+        "version": "1.0.0"
+    }
+)
+
+# Create logger and add Google Cloud handler
+logger = get_logger("my_app")
+gcp_handler = GoogleCloudHandler(config)
+logger.addHandler(gcp_handler)
+```
+
+#### Advanced Configuration
+
+```python
+config = GoogleCloudConfig(
+    # Google Cloud settings
+    project_id="my-project",
+    log_name="my-application",
+    resource_type="k8s_container",
+    resource_labels={
+        "cluster_name": "production-cluster",
+        "namespace_name": "default",
+        "pod_name": "api-server-1",
+        "container_name": "api"
+    },
+    
+    # Authentication
+    credentials_path="/path/to/service-account.json",  # Optional
+    
+    # Performance settings
+    use_background_thread=True,  # Background uploads (default: True)
+    grace_period=10.0,  # Seconds to wait on shutdown (default: 5.0)
+    
+    # Structured logging
+    use_structured_logging=True,  # Send as JSON (default: True)
+    include_trace_id=True,  # Include trace for correlation (default: True)
+    
+    # Batching (from base config)
+    batch_size=100,
+    flush_interval=5.0,
+    async_upload=True
+)
+```
+
+### Authentication
+
+The Google Cloud handler uses Application Default Credentials (ADC):
+
+1. **Service Account** (if `credentials_path` provided)
+2. **Environment variable** (`GOOGLE_APPLICATION_CREDENTIALS`)
+3. **gcloud auth** (local development)
+4. **GCE/GKE/Cloud Run metadata** (when running on Google Cloud)
+
+### Resource Types
+
+Common resource types for different Google Cloud environments:
+
+```python
+# Global (generic)
+config = GoogleCloudConfig(resource_type="global")
+
+# Compute Engine
+config = GoogleCloudConfig(
+    resource_type="gce_instance",
+    resource_labels={
+        "instance_id": "1234567890",
+        "zone": "us-central1-a"
+    }
+)
+
+# Kubernetes Engine
+config = GoogleCloudConfig(
+    resource_type="k8s_container",
+    resource_labels={
+        "cluster_name": "my-cluster",
+        "namespace_name": "production",
+        "pod_name": "api-7f8b9c-xyz",
+        "container_name": "api-server"
+    }
+)
+
+# Cloud Run
+config = GoogleCloudConfig(
+    resource_type="cloud_run_revision",
+    resource_labels={
+        "service_name": "my-service",
+        "revision_name": "my-service-00001-abc",
+        "location": "us-central1"
+    }
+)
+
+# App Engine
+config = GoogleCloudConfig(
+    resource_type="gae_app",
+    resource_labels={
+        "module_id": "default",
+        "version_id": "20240101t120000"
+    }
+)
+```
+
+### Integration with Context
+
+Google Cloud handler works seamlessly with the context system:
+
+```python
+from structured_logging.context import request_context
+
+with request_context(user_id="user123", request_id="req456"):
+    logger.info("Processing request")
+    # Logs will include user_id and request_id fields
+```
+
+### Structured Output
+
+Logs are sent to Google Cloud as structured JSON:
+
+```json
+{
+  "message": "Processing request",
+  "logger": "my_app",
+  "module": "main",
+  "funcName": "process_request",
+  "lineno": 42,
+  "user_id": "user123",
+  "request_id": "req456",
+  "timestamp": "2025-06-28T12:34:56.789Z"
+}
+```
+
+### Best Practices
+
+#### 1. Resource Labels
+
+Use meaningful resource labels for better organization:
+
+```python
+# Development
+resource_labels = {
+    "environment": "development",
+    "developer": "john.doe"
+}
+
+# Production
+resource_labels = {
+    "environment": "production",
+    "region": "us-central1",
+    "service": "api",
+    "version": "v1.2.3"
+}
+```
+
+#### 2. Log Names
+
+Use hierarchical log names:
+
+```python
+# By service
+log_name = "api-service"
+log_name = "worker-service"
+
+# By environment
+log_name = "production/api"
+log_name = "staging/api"
+
+# By component
+log_name = "api/auth"
+log_name = "api/payments"
+```
+
+#### 3. Trace Correlation
+
+Enable trace correlation for distributed systems:
+
+```python
+config = GoogleCloudConfig(
+    include_trace_id=True
+)
+
+# In your code
+record.trace_id = f"projects/{project_id}/traces/{trace_id}"
+```
+
+#### 4. Performance Optimization
+
+For high-volume applications:
+
+```python
+config = GoogleCloudConfig(
+    use_background_thread=True,  # Non-blocking writes
+    batch_size=200,  # Larger batches
+    flush_interval=10.0,  # Less frequent flushes
+)
+```
+
+For real-time monitoring:
+
+```python
+config = GoogleCloudConfig(
+    use_background_thread=True,
+    batch_size=10,  # Small batches
+    flush_interval=1.0,  # Frequent flushes
+)
+```
+
+### Monitoring
+
+Monitor Google Cloud handler performance:
+
+```python
+# Check if background thread is running
+if handler._transport:
+    print("Background transport is active")
+```
+
+### Cloud Logging Query Examples
+
+Use the Logs Explorer in Google Cloud Console:
+
+```sql
+-- Find errors by user
+resource.type="k8s_container"
+severity>=ERROR
+jsonPayload.user_id="user123"
+
+-- Response time analysis
+resource.type="k8s_container"
+jsonPayload.response_time_ms>1000
+
+-- Group by endpoint
+resource.type="k8s_container"
+jsonPayload.endpoint=~"/api/.*"
+| group by jsonPayload.endpoint
+```
+
+### Troubleshooting
+
+#### No logs appearing in Google Cloud
+
+1. Check authentication:
+```python
+from google.cloud import logging
+client = logging.Client()
+client.list_entries()  # Should not raise an error
+```
+
+2. Check project ID:
+```bash
+gcloud config get-value project
+```
+
+3. Enable API:
+```bash
+gcloud services enable logging.googleapis.com
+```
+
+4. Check permissions - service account needs:
+- `logging.logEntries.create`
+- `logging.logs.write`
+
+#### Authentication errors
+
+1. Set credentials explicitly:
+```python
+config = GoogleCloudConfig(
+    credentials_path="/path/to/service-account.json"
+)
+```
+
+2. Or use environment variable:
+```bash
+export GOOGLE_APPLICATION_CREDENTIALS="/path/to/service-account.json"
+```
+
+#### High memory usage
+
+Use background thread mode (default) and tune grace period:
+
+```python
+config = GoogleCloudConfig(
+    use_background_thread=True,
+    grace_period=2.0  # Shorter grace period
+)
+```
+
+### Legacy Stackdriver Support
+
+For backward compatibility, Stackdriver aliases are provided:
 
 ```python
 from structured_logging.cloud import StackdriverConfig, StackdriverHandler
+from structured_logging.cloud.utils import create_stackdriver_logger
 
-config = StackdriverConfig(
-    project_id="my-project",
-    log_name="my-app"
-)
+# These are aliases for Google Cloud classes
+config = StackdriverConfig(project_id="my-project")
+handler = StackdriverHandler(config)
+logger = create_stackdriver_logger("my_app")
 ```
+
+## Coming Soon
 
 ### Azure Monitor
 

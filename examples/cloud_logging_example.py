@@ -209,37 +209,177 @@ def multi_region_example():
     print("✓ Logs sent to multiple regions")
 
 
+def google_cloud_basic_example():
+    """Basic Google Cloud Logging example"""
+    print("\n=== Basic Google Cloud Example ===")
+    
+    from structured_logging.cloud.utils import create_google_cloud_logger
+    
+    # Create a Google Cloud logger
+    logger = create_google_cloud_logger(
+        name="my_application",
+        project_id="my-project",  # Optional - uses default project
+        log_name="demo-logs"
+    )
+    
+    # Log some messages
+    logger.info("Application started on Google Cloud")
+    logger.warning("This is a warning message")
+    logger.error("An error occurred", extra={"error_code": "E001"})
+    
+    print("✓ Logs sent to Google Cloud Logging")
+
+
+def google_cloud_kubernetes_example():
+    """Google Cloud Logging with Kubernetes resource"""
+    print("\n=== Google Cloud Kubernetes Example ===")
+    
+    from structured_logging.cloud import GoogleCloudConfig, GoogleCloudHandler
+    
+    # Configure for Kubernetes
+    config = GoogleCloudConfig(
+        project_id="my-project",
+        log_name="k8s-app",
+        resource_type="k8s_container",
+        resource_labels={
+            "cluster_name": "production-cluster",
+            "namespace_name": "default",
+            "pod_name": "api-server-7f8b9c-xyz",
+            "container_name": "api"
+        }
+    )
+    
+    logger = get_logger("k8s_app")
+    handler = GoogleCloudHandler(config)
+    logger.addHandler(handler)
+    
+    # Log with Kubernetes context
+    logger.info("Pod started", extra={
+        "ctx_version": "v1.2.3",
+        "ctx_replicas": 3,
+        "ctx_node": "gke-node-1"
+    })
+    
+    print("✓ Kubernetes logs sent to Google Cloud")
+
+
+def google_cloud_trace_example():
+    """Google Cloud Logging with trace correlation"""
+    print("\n=== Google Cloud Trace Example ===")
+    
+    from structured_logging.cloud.utils import create_google_cloud_logger
+    
+    logger = create_google_cloud_logger(
+        name="traced_app",
+        project_id="my-project"
+    )
+    
+    # Simulate distributed tracing
+    trace_id = "1234567890abcdef"
+    
+    # Log with trace ID for correlation
+    for i in range(3):
+        # In real app, get trace from context
+        logger.info(f"Processing step {i}", extra={
+            "trace_id": f"projects/my-project/traces/{trace_id}",
+            "span_id": f"span_{i}",
+            "ctx_step": i
+        })
+    
+    print("✓ Traced logs sent to Google Cloud")
+
+
+def stackdriver_legacy_example():
+    """Example using legacy Stackdriver naming"""
+    print("\n=== Stackdriver Legacy Example ===")
+    
+    from structured_logging.cloud.utils import create_stackdriver_logger
+    
+    # Use legacy Stackdriver function (alias for Google Cloud)
+    logger = create_stackdriver_logger(
+        name="legacy_app",
+        project_id="my-project"
+    )
+    
+    logger.info("Using Stackdriver legacy naming")
+    
+    print("✓ Logs sent via Stackdriver alias")
+
+
 if __name__ == "__main__":
-    print("=== CloudWatch Logging Examples ===")
-    print("\nNOTE: These examples require:")
-    print("1. AWS credentials configured (via env vars, ~/.aws/credentials, or IAM role)")
-    print("2. Appropriate permissions to create log groups/streams and put log events")
-    print("3. The 'boto3' package installed: pip install structured-logging[aws]")
+    print("=== Cloud Platform Logging Examples ===")
+    print("\nSelect platform:")
+    print("1. AWS CloudWatch")
+    print("2. Google Cloud Logging")
+    print("3. Both")
     
-    # Check if boto3 is available
-    try:
-        import boto3
-        print("\n✓ boto3 is installed")
-    except ImportError:
-        print("\n✗ boto3 not found. Install with: pip install structured-logging[aws]")
-        exit(1)
+    choice = input("\nEnter choice (1-3): ").strip()
     
-    # Run examples
-    try:
-        basic_cloudwatch_example()
-        advanced_cloudwatch_example()
-        context_aware_cloudwatch_example()
-        batch_logging_example()
-        error_tracking_example()
-        cloudwatch_insights_example()
-        multi_region_example()
+    if choice in ["1", "3"]:
+        print("\n=== AWS CloudWatch Examples ===")
+        print("\nNOTE: These examples require:")
+        print("1. AWS credentials configured (via env vars, ~/.aws/credentials, or IAM role)")
+        print("2. Appropriate permissions to create log groups/streams and put log events")
+        print("3. The 'boto3' package installed: pip install structured-logging[aws]")
         
-        print("\n=== All examples completed ===")
-        print("\nCheck your AWS CloudWatch console to see the logs!")
+        # Check if boto3 is available
+        try:
+            import boto3
+            print("\n✓ boto3 is installed")
+        except ImportError:
+            print("\n✗ boto3 not found. Install with: pip install structured-logging[aws]")
+            if choice == "1":
+                exit(1)
+        else:
+            # Run AWS examples
+            try:
+                basic_cloudwatch_example()
+                advanced_cloudwatch_example()
+                context_aware_cloudwatch_example()
+                batch_logging_example()
+                error_tracking_example()
+                cloudwatch_insights_example()
+                multi_region_example()
+                
+                print("\n=== AWS examples completed ===")
+                print("Check your AWS CloudWatch console to see the logs!")
+                
+            except Exception as e:
+                print(f"\n✗ Error running AWS examples: {e}")
+                print("\nMake sure you have:")
+                print("1. Valid AWS credentials configured")
+                print("2. Permissions to write to CloudWatch Logs")
+                print("3. Network connectivity to AWS")
+    
+    if choice in ["2", "3"]:
+        print("\n=== Google Cloud Logging Examples ===")
+        print("\nNOTE: These examples require:")
+        print("1. Google Cloud credentials (service account, gcloud auth, or metadata)")
+        print("2. Appropriate permissions (logging.logEntries.create, logging.logs.write)")
+        print("3. The 'google-cloud-logging' package: pip install structured-logging[gcp]")
         
-    except Exception as e:
-        print(f"\n✗ Error running examples: {e}")
-        print("\nMake sure you have:")
-        print("1. Valid AWS credentials configured")
-        print("2. Permissions to write to CloudWatch Logs")
-        print("3. Network connectivity to AWS")
+        # Check if google-cloud-logging is available
+        try:
+            import google.cloud.logging
+            print("\n✓ google-cloud-logging is installed")
+        except ImportError:
+            print("\n✗ google-cloud-logging not found. Install with: pip install structured-logging[gcp]")
+            exit(1)
+        
+        # Run Google Cloud examples
+        try:
+            google_cloud_basic_example()
+            google_cloud_kubernetes_example()
+            google_cloud_trace_example()
+            stackdriver_legacy_example()
+            
+            print("\n=== Google Cloud examples completed ===")
+            print("Check your Google Cloud Console Logs Explorer to see the logs!")
+            
+        except Exception as e:
+            print(f"\n✗ Error running Google Cloud examples: {e}")
+            print("\nMake sure you have:")
+            print("1. Valid Google Cloud credentials configured")
+            print("2. A Google Cloud project set")
+            print("3. Permissions to write logs")
+            print("4. Network connectivity to Google Cloud")

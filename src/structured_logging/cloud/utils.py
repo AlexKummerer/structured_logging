@@ -99,3 +99,86 @@ def create_cloud_logger_config(
         config.output_type = "console"
     
     return config
+
+
+def create_google_cloud_logger(
+    name: str,
+    project_id: Optional[str] = None,
+    log_name: Optional[str] = None,
+    resource_type: str = "global",
+    resource_labels: Optional[dict] = None,
+    log_level: str = "INFO"
+) -> Any:
+    """
+    Create a logger configured for Google Cloud Logging
+    
+    Args:
+        name: Logger name
+        project_id: Google Cloud project ID (auto-detected if not provided)
+        log_name: Google Cloud log name (defaults to logger name)
+        resource_type: Resource type (e.g., "global", "gce_instance", "k8s_container")
+        resource_labels: Additional resource labels
+        log_level: Logging level
+        
+    Returns:
+        Configured logger instance
+        
+    Example:
+        logger = create_google_cloud_logger(
+            "my_app",
+            project_id="my-project",
+            resource_type="k8s_container",
+            resource_labels={
+                "cluster_name": "production",
+                "namespace_name": "default"
+            }
+        )
+        logger.info("Application started")
+    """
+    from .gcp import GoogleCloudConfig, GoogleCloudHandler
+    
+    # Create Google Cloud configuration
+    gcp_config = GoogleCloudConfig(
+        project_id=project_id,
+        log_name=log_name or name,
+        resource_type=resource_type,
+        resource_labels=resource_labels or {},
+        use_structured_logging=True,
+        use_background_thread=True
+    )
+    
+    # Create logger config
+    logger_config = LoggerConfig(
+        log_level=log_level,
+        formatter_type="json",
+        include_timestamp=True,
+        include_request_id=True
+    )
+    
+    # Get logger
+    logger = get_logger(name, logger_config)
+    
+    # Add Google Cloud handler
+    gcp_handler = GoogleCloudHandler(gcp_config)
+    logger.addHandler(gcp_handler)
+    
+    return logger
+
+
+def create_stackdriver_logger(
+    name: str,
+    project_id: Optional[str] = None,
+    log_name: Optional[str] = None,
+    log_level: str = "INFO"
+) -> Any:
+    """
+    Create a logger configured for Stackdriver (legacy name for Google Cloud Logging)
+    
+    This is an alias for create_google_cloud_logger() for backward compatibility.
+    """
+    return create_google_cloud_logger(
+        name=name,
+        project_id=project_id,
+        log_name=log_name,
+        log_level=log_level
+    )
