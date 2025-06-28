@@ -358,21 +358,20 @@ class AsyncLogger:
         # Track if started
         self._started = False
 
-    async def _alog(self, level: str, message: str, **extra: Any) -> bool:
-        """Internal async logging method"""
-        # Check log level
+    def _should_log(self, level: str) -> bool:
+        """Check if message should be logged based on level"""
         numeric_level = getattr(logging, level.upper())
-        if numeric_level < self.level:
-            return True  # Log was "successful" but filtered
+        return numeric_level >= self.level
 
-        # Gather context
-        context = {}
-
+    async def _add_request_id_context(self, context: Dict[str, Any]) -> None:
+        """Add request ID to context if configured"""
         if self.logger_config.include_request_id:
             request_id = await aget_request_id()
             if request_id:
                 context["ctx_request_id"] = request_id
 
+    async def _add_user_context(self, context: Dict[str, Any]) -> None:
+        """Add user context fields if configured"""
         if self.logger_config.include_user_context:
             user_context = await aget_user_context()
             if user_context:
@@ -380,14 +379,29 @@ class AsyncLogger:
                     if value is not None:
                         context[f"ctx_{key}"] = value
 
-        # Custom context
+    async def _add_custom_context(self, context: Dict[str, Any]) -> None:
+        """Add custom context fields"""
         custom_context = await aget_custom_context()
         if custom_context:
             for key, value in custom_context.items():
                 if value is not None:
                     context[f"ctx_{key}"] = value
 
-        # Create log entry
+    async def _gather_context(self) -> Dict[str, Any]:
+        """Gather all context fields"""
+        context = {}
+        await self._add_request_id_context(context)
+        await self._add_user_context(context)
+        await self._add_custom_context(context)
+        return context
+
+    async def _alog(self, level: str, message: str, **extra: Any) -> bool:
+        """Internal async logging method"""
+        if not self._should_log(level):
+            return True
+
+        context = await self._gather_context()
+        
         entry = AsyncLogEntry(
             level=level,
             message=message,
@@ -396,8 +410,7 @@ class AsyncLogger:
             context=context,
             extra={k: v for k, v in extra.items() if v is not None},
         )
-
-        # Enqueue for processing
+        
         return await self.processor.enqueue_log(entry)
 
     async def adebug(self, message: str, **extra: Any) -> bool:
