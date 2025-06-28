@@ -13,6 +13,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Advanced Analytics**: Pattern detection, anomaly identification, performance metrics
 - **OpenTelemetry Integration**: Distributed tracing support
 
+## [0.6.1] - 2025-06-28
+
+### 🐛 Bug Fixes
+- **Logger Configuration**: Fixed logger reconfiguration when config is explicitly provided
+- **Handler Logic**: Updated handler logic to properly support all output_type values ("console", "file", "both", "network", etc.)
+- **NumPy Serialization**: Fixed NumPy scalar serialization to support metadata inclusion with `numpy_include_metadata` config
+- **Pandas Compatibility**: Fixed deprecation warnings by replacing `is_categorical_dtype` with `isinstance(dtype, pd.CategoricalDtype)`
+- **Network Handlers**: Fixed network handler tests by correcting import errors and using proper exception types
+- **Type Detection**: Fixed tests to handle type-detected masked values in FastAPI integration
+- **Validation**: Added missing `reset_validation_stats` method to SchemaValidator class
+
+### ♻️ Code Improvements
+- **Major Refactoring**: Completed comprehensive refactoring to comply with programming guidelines
+  - Split large modules into well-organized packages: `formatter/`, `filtering/`, `handlers/`
+  - Refactored 87+ functions to follow Single Responsibility Principle (SRP)
+  - Fixed all critical import violations (all imports now at top of files)
+  - Updated programming guidelines to allow functions >20 lines if they follow SRP
+- **Test Coverage**: Improved test coverage from ~80% to 84%
+- **Code Organization**: Better separation of concerns with modular package structure
+
+### 📚 Documentation
+- Updated PROGRAMMING_GUIDELINES.md with SRP exceptions and examples
+- Maintained comprehensive CLAUDE.md for AI-assisted development
+
 ## [0.6.0] - 2025-06-19
 
 ### 🧬 Scientific Computing & Network Integration
