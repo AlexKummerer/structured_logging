@@ -333,7 +333,7 @@ def _categorize_dataframe_columns(df: Any) -> Dict[str, List[str]]:
             categories["numeric"].append(col)
         elif pd.api.types.is_datetime64_any_dtype(dtype):
             categories["datetime"].append(col)
-        elif pd.api.types.is_categorical_dtype(dtype):
+        elif isinstance(dtype, pd.CategoricalDtype):
             categories["categorical"].append(col)
         elif pd.api.types.is_string_dtype(dtype) or pd.api.types.is_object_dtype(
             dtype
@@ -391,7 +391,7 @@ def _serialize_dataframe_data(df: Any, config: SerializationConfig) -> Dict[str,
                 result[col] = (df[col].astype("int64") // 10**9).tolist()
             else:
                 result[col] = df[col].tolist()
-        elif pd.api.types.is_categorical_dtype(df[col]):
+        elif isinstance(df[col].dtype, pd.CategoricalDtype):
             if config.pandas_categorical_as_codes:
                 result[col] = df[col].cat.codes.tolist()
             else:
@@ -516,7 +516,7 @@ def _analyze_series_by_type(series: Any) -> Dict[str, Any]:
         return _analyze_numeric_series(series)
     elif pd.api.types.is_datetime64_any_dtype(series):
         return _analyze_datetime_series(series)
-    elif pd.api.types.is_categorical_dtype(series):
+    elif isinstance(series.dtype, pd.CategoricalDtype):
         return _analyze_categorical_series(series)
     elif pd.api.types.is_bool_dtype(series):
         return _analyze_boolean_series(series)
@@ -546,7 +546,7 @@ def _serialize_series_data(series: Any, config: SerializationConfig) -> Any:
             else:
                 return series.tolist()
 
-        elif pd.api.types.is_categorical_dtype(series):
+        elif isinstance(series.dtype, pd.CategoricalDtype):
             if config.pandas_categorical_as_codes:
                 return series.cat.codes.tolist()
             else:

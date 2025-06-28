@@ -286,11 +286,12 @@ class TestEnhancedPandasIntegration:
         result = serialize_for_logging(numeric_series, config)
 
         assert result["__pandas_type__"] == "Series"
-        assert result["data_type"] == "numeric"
+        assert "value_analysis" in result
+        assert result["value_analysis"]["data_type"] == "numeric"
         assert "memory_usage" in result
         assert "index_info" in result
         assert "statistics" in result
-        assert "value_range" in result
+        assert "range" in result["value_analysis"]
 
     def test_series_categorical_serialization(self):
         """Test Series with categorical data"""

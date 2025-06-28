@@ -281,7 +281,7 @@ class TypeRegistry:
 def _serialize_numpy_scalar(scalar: Any, config: SerializationConfig) -> Any:
     from .numpy_serializer import serialize_numpy_scalar
 
-    return serialize_numpy_scalar(scalar)
+    return serialize_numpy_scalar(scalar, config)
 
 
 def _serialize_numpy_array(array: Any, config: SerializationConfig) -> Dict[str, Any]:

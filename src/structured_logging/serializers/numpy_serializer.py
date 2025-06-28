@@ -208,38 +208,62 @@ def _compute_numpy_stats(array: Any, config: SerializationConfig) -> Dict[str, A
     return stats
 
 
-def serialize_numpy_scalar(scalar: Any) -> Any:
+def serialize_numpy_scalar(scalar: Any, config: SerializationConfig) -> Any:
     """Convert NumPy scalar to Python type"""
     if not HAS_NUMPY:
         return str(scalar)
 
-    # Try to convert to native Python type
+    # Determine the type category
     if np.issubdtype(scalar.dtype, np.integer):
-        return int(scalar)
+        value = int(scalar)
+        type_name = "integer"
     elif np.issubdtype(scalar.dtype, np.floating):
         if np.isnan(scalar):
-            return "__numpy_nan__"
+            value = "__numpy_nan__"
         elif np.isinf(scalar):
-            return "__numpy_inf__" if scalar > 0 else "__numpy_-inf__"
+            value = "__numpy_inf__" if scalar > 0 else "__numpy_-inf__"
         else:
-            return float(scalar)
+            # Apply precision if configured
+            if config.numpy_array_precision is not None:
+                value = round(float(scalar), config.numpy_array_precision)
+            else:
+                value = float(scalar)
+        type_name = "floating"
     elif np.issubdtype(scalar.dtype, np.complexfloating):
-        return {"real": float(scalar.real), "imag": float(scalar.imag)}
+        value = {"real": float(scalar.real), "imag": float(scalar.imag)}
+        type_name = "complex"
     elif np.issubdtype(scalar.dtype, np.bool_):
-        return bool(scalar)
+        value = bool(scalar)
+        type_name = "boolean"
     elif np.issubdtype(scalar.dtype, np.datetime64):
         # Convert to ISO format string
-        return np.datetime_as_string(scalar, unit="auto")
+        value = np.datetime_as_string(scalar, unit="auto")
+        type_name = "datetime64"
     elif np.issubdtype(scalar.dtype, np.timedelta64):
         # Convert to seconds
-        return float(scalar / np.timedelta64(1, "s"))
+        value = float(scalar / np.timedelta64(1, "s"))
+        type_name = "timedelta64"
+    elif np.issubdtype(scalar.dtype, np.str_):
+        value = str(scalar)
+        type_name = "string"
     else:
         # For other types, try direct conversion or fall back to string
         try:
-            return scalar.item()
+            value = scalar.item()
+            type_name = "unknown"
         except:
             return {
                 "__numpy_scalar_error__": "Cannot convert to Python type",
                 "__numpy_dtype__": str(scalar.dtype),
                 "__repr__": str(scalar),
             }
+
+    # Return with metadata if requested
+    if config.numpy_include_metadata:
+        return {
+            "value": value,
+            "__numpy_type__": type_name,
+            "__numpy_dtype__": str(scalar.dtype),
+        }
+    else:
+        return value
