@@ -25,10 +25,12 @@ This document outlines the coding standards and best practices for the Structure
 - Use meaningful file names that reflect their purpose
 
 #### Function Length Limits
-- **Maximum function length: ca. 20 lines**
-- Functions should be focused and do one thing
-- Extract complex logic into helper functions
+- **Target function length: ca. 20 lines**
+- Functions should follow the Single Responsibility Principle (SRP)
+- **Exception**: If a function follows SRP but exceeds 20 lines due to necessary implementation details (e.g., comprehensive error handling, required validation steps), it may be acceptable
+- Extract complex logic into helper functions when it improves readability
 - Use early returns to reduce nesting
+- Prioritize clarity and maintainability over strict line limits
 
 ```python
 # Good - under 20 lines, single responsibility
@@ -42,9 +44,25 @@ def validate_log_data(data: dict, schema: str) -> None:
     if data.get("timestamp") and not isinstance(data["timestamp"], datetime):
         raise ValidationError("Timestamp must be datetime object")
 
-# Bad - too long, multiple responsibilities
+# Acceptable - over 20 lines but follows SRP
+def format_log_entry(record: LogRecord, config: FormatterConfig) -> str:
+    """Format a single log entry - single responsibility."""
+    # 25 lines of cohesive formatting logic that:
+    # - Extracts timestamp
+    # - Formats level
+    # - Processes message
+    # - Adds context fields
+    # - Handles special characters
+    # All steps are necessary for the single task of formatting
+
+# Bad - too long AND multiple responsibilities
 def create_logger_with_validation_and_serialization(config):
-    # 30+ lines of mixed validation, creation, and serialization logic
+    # 30+ lines mixing:
+    # - Configuration validation
+    # - Logger creation
+    # - Handler setup
+    # - Serialization configuration
+    # Should be split into separate functions
 ```
 
 ## Code Structure
