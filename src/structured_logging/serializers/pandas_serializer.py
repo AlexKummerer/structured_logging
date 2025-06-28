@@ -447,56 +447,90 @@ def _serialize_dataframe_sample(
     return result
 
 
-def _analyze_series_values(series: Any, config: SerializationConfig) -> Dict[str, Any]:
-    """Analyze Series values for summary information"""
-    analysis = {}
-
-    # Null values
+def _analyze_null_values(series: Any) -> Dict[str, Any]:
+    """Analyze null values in series"""
     null_count = series.isnull().sum()
-    analysis["null_count"] = int(null_count)
-    analysis["null_percent"] = round(float(null_count / len(series) * 100), 2)
+    return {
+        "null_count": int(null_count),
+        "null_percent": round(float(null_count / len(series) * 100), 2)
+    }
 
-    # Unique values
+def _analyze_unique_values(series: Any) -> Dict[str, Any]:
+    """Analyze unique values in series"""
     unique_count = series.nunique()
-    analysis["unique_count"] = int(unique_count)
-    analysis["unique_percent"] = round(float(unique_count / len(series) * 100), 2)
-
+    result = {
+        "unique_count": int(unique_count),
+        "unique_percent": round(float(unique_count / len(series) * 100), 2)
+    }
+    
     # Top values (if reasonable number of unique values)
     if unique_count <= 20:
         value_counts = series.value_counts()
-        analysis["top_values"] = {
+        result["top_values"] = {
             str(val): int(count) for val, count in value_counts.head(10).items()
         }
+    
+    return result
 
-    # Type-specific analysis
+def _analyze_numeric_series(series: Any) -> Dict[str, Any]:
+    """Analyze numeric series"""
+    result = {"data_type": "numeric"}
+    if len(series) > 0:
+        result["range"] = {
+            "min": float(series.min()),
+            "max": float(series.max()),
+        }
+    return result
+
+def _analyze_datetime_series(series: Any) -> Dict[str, Any]:
+    """Analyze datetime series"""
+    result = {"data_type": "datetime"}
+    if len(series) > 0:
+        result["range"] = {
+            "start": series.min().isoformat(),
+            "end": series.max().isoformat(),
+        }
+    return result
+
+def _analyze_categorical_series(series: Any) -> Dict[str, Any]:
+    """Analyze categorical series"""
+    return {
+        "data_type": "categorical",
+        "num_categories": len(series.cat.categories)
+    }
+
+def _analyze_boolean_series(series: Any) -> Dict[str, Any]:
+    """Analyze boolean series"""
+    result = {"data_type": "boolean"}
+    if len(series) > 0:
+        result["value_counts"] = {
+            "true": int(series.sum()),
+            "false": int((~series).sum()),
+            "null": int(series.isnull().sum()),
+        }
+    return result
+
+def _analyze_series_by_type(series: Any) -> Dict[str, Any]:
+    """Analyze series based on its data type"""
     if pd.api.types.is_numeric_dtype(series):
-        analysis["data_type"] = "numeric"
-        if len(series) > 0:
-            analysis["range"] = {
-                "min": float(series.min()),
-                "max": float(series.max()),
-            }
+        return _analyze_numeric_series(series)
     elif pd.api.types.is_datetime64_any_dtype(series):
-        analysis["data_type"] = "datetime"
-        if len(series) > 0:
-            analysis["range"] = {
-                "start": series.min().isoformat(),
-                "end": series.max().isoformat(),
-            }
+        return _analyze_datetime_series(series)
     elif pd.api.types.is_categorical_dtype(series):
-        analysis["data_type"] = "categorical"
-        analysis["num_categories"] = len(series.cat.categories)
+        return _analyze_categorical_series(series)
     elif pd.api.types.is_bool_dtype(series):
-        analysis["data_type"] = "boolean"
-        if len(series) > 0:
-            analysis["value_counts"] = {
-                "true": int(series.sum()),
-                "false": int((~series).sum()),
-                "null": int(series.isnull().sum()),
-            }
+        return _analyze_boolean_series(series)
     else:
-        analysis["data_type"] = "other"
+        return {"data_type": "other"}
 
+def _analyze_series_values(series: Any, config: SerializationConfig) -> Dict[str, Any]:
+    """Analyze Series values for summary information"""
+    analysis = {}
+    
+    analysis.update(_analyze_null_values(series))
+    analysis.update(_analyze_unique_values(series))
+    analysis.update(_analyze_series_by_type(series))
+    
     return analysis
 
 
