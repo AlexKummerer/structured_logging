@@ -4,7 +4,7 @@ Structured Logging Library
 A flexible Python library for structured JSON logging with context management and async support.
 """
 
-__version__ = "0.6.1"
+__version__ = "0.7.0"
 
 # Async logging support
 from .async_config import (
