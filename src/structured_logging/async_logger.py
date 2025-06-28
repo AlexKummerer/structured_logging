@@ -31,6 +31,26 @@ class AsyncLogEntry:
 class AsyncLogProcessor:
     """Background processor for async log entries"""
 
+    def _create_formatter(self, logger_config: LoggerConfig, 
+                         serialization_config: SerializationConfig) -> Union[
+                             CSVFormatter, PlainTextFormatter, StructuredFormatter]:
+        """Create appropriate formatter based on config"""
+        if logger_config.formatter_type == "csv":
+            return CSVFormatter(logger_config, serialization_config)
+        elif logger_config.formatter_type == "plain":
+            return PlainTextFormatter(logger_config, serialization_config)
+        else:
+            return StructuredFormatter(logger_config, serialization_config)
+
+    def _init_stats(self) -> Dict[str, Any]:
+        """Initialize statistics dictionary"""
+        return {
+            "processed_entries": 0,
+            "dropped_entries": 0,
+            "errors": 0,
+            "batch_flushes": 0,
+        }
+
     def __init__(
         self,
         async_config: AsyncLoggerConfig,
@@ -46,29 +66,10 @@ class AsyncLogProcessor:
         self.running = False
         self.workers: List[asyncio.Task] = []
         self._shutdown_event = asyncio.Event()
-
-        # Create formatter with serialization config
-        if logger_config.formatter_type == "csv":
-            self.formatter: Union[
-                CSVFormatter, PlainTextFormatter, StructuredFormatter
-            ] = CSVFormatter(logger_config, self.serialization_config)
-        elif logger_config.formatter_type == "plain":
-            self.formatter = PlainTextFormatter(
-                logger_config, self.serialization_config
-            )
-        else:
-            self.formatter = StructuredFormatter(
-                logger_config, self.serialization_config
-            )
-
-        # Output stream (could be enhanced to support file/network handlers)
+        
+        self.formatter = self._create_formatter(logger_config, self.serialization_config)
         self.stream = sys.stdout
-        self._stats = {
-            "processed_entries": 0,
-            "dropped_entries": 0,
-            "errors": 0,
-            "batch_flushes": 0,
-        }
+        self._stats = self._init_stats()
 
     async def start(self) -> None:
         """Start the async log processor"""
