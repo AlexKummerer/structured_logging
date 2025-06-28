@@ -4,7 +4,12 @@ A flexible Python library for structured JSON logging with context management, a
 
 ## Features
 
-### 🚀 **Version 0.6.0 - Scientific & Network Integration**
+### 🚀 **Version 0.7.0 (In Development) - Cloud Platform Integration**
+- **☁️ AWS CloudWatch**: Native integration with automatic batching, compression, and retry logic
+- **🔜 Google Cloud Logging**: (Coming soon) Stackdriver integration
+- **🔜 Azure Monitor**: (Coming soon) Application Insights integration
+
+### 🧬 **Version 0.6.0 - Scientific & Network Integration**
 - **🧬 Scientific Data Support**: Native NumPy, Pandas, and SciPy integration with intelligent serialization
 - **🌐 Network Handlers**: Syslog (RFC 3164/5424), HTTP API, and raw socket logging with SSL/TLS support
 - **🔍 Intelligent Type Detection**: Automatic detection and conversion of complex data types
@@ -28,11 +33,10 @@ A flexible Python library for structured JSON logging with context management, a
 ```bash
 pip install structured-logging
 
-# Optional scientific dependencies
-pip install numpy pandas scipy
-
-# All dependencies for full feature set
-pip install structured-logging[scientific]
+# Optional extras
+pip install structured-logging[scientific]  # NumPy, Pandas, SciPy support
+pip install structured-logging[aws]         # AWS CloudWatch integration
+pip install structured-logging[all]         # All optional dependencies
 ```
 
 ## Quick Start
@@ -83,6 +87,23 @@ with request_context(experiment_id="exp_001", researcher="dr_smith"):
         'humidity': np.random.beta(2, 5, 100) * 100
     })
     logger.info("Environmental data collected", dataset=results_df)
+```
+
+### Cloud Platform Logging
+
+```python
+# AWS CloudWatch Integration
+from structured_logging.cloud.utils import create_cloudwatch_logger
+
+logger = create_cloudwatch_logger(
+    name="my_application",
+    log_group="/aws/my-app/production", 
+    region="us-east-1"
+)
+
+logger.info("Application started in AWS", 
+           instance_id="i-1234567890",
+           availability_zone="us-east-1a")
 ```
 
 ### Network Logging

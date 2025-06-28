@@ -83,6 +83,18 @@ from .network import (
     SyslogConfig,
     SyslogHandler,
 )
+
+# Import cloud handlers if available
+try:
+    from .cloud import (
+        CloudHandlerConfig,
+        CloudLogHandler,
+        CloudWatchConfig,
+        CloudWatchHandler,
+    )
+    _CLOUD_AVAILABLE = True
+except ImportError:
+    _CLOUD_AVAILABLE = False
 from .serializers import (
     EnhancedJSONEncoder,
     LazyDict,
@@ -202,3 +214,12 @@ __all__ = [
     "alog_with_context",
     "shutdown_all_async_loggers",
 ]
+
+# Add cloud exports if available
+if _CLOUD_AVAILABLE:
+    __all__.extend([
+        "CloudHandlerConfig",
+        "CloudLogHandler", 
+        "CloudWatchConfig",
+        "CloudWatchHandler",
+    ])
