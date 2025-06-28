@@ -256,6 +256,26 @@ class AsyncLogProcessor:
             if self.async_config.error_callback:
                 self.async_config.error_callback(e)
 
+    async def _process_batch_entries(self, batch: List[AsyncLogEntry]) -> None:
+        """Process all entries in a batch"""
+        for entry in batch:
+            await self._process_log_entry(entry)
+            self._stats["processed_entries"] += 1
+
+    def _update_flush_stats(self) -> None:
+        """Update statistics after flush"""
+        self.last_flush_time = time.time()
+        self._stats["batch_flushes"] += 1
+        if hasattr(self.stream, "flush"):
+            self.stream.flush()
+
+    def _handle_batch_error(self, e: Exception, batch: List[AsyncLogEntry]) -> None:
+        """Handle errors during batch processing"""
+        self._stats["errors"] += 1
+        self.batch.extend(batch)  # Put entries back
+        if self.async_config.error_callback:
+            self.async_config.error_callback(e)
+
     async def _flush_batch(self) -> None:
         """Flush the current batch of log entries"""
         if not self.batch:
@@ -265,25 +285,10 @@ class AsyncLogProcessor:
         self.batch.clear()
 
         try:
-            # Process all entries in batch
-            for entry in batch_to_process:
-                await self._process_log_entry(entry)
-                self._stats["processed_entries"] += 1
-
-            # Update flush time and stats
-            self.last_flush_time = time.time()
-            self._stats["batch_flushes"] += 1
-
-            # Flush output stream
-            if hasattr(self.stream, "flush"):
-                self.stream.flush()
-
+            await self._process_batch_entries(batch_to_process)
+            self._update_flush_stats()
         except Exception as e:
-            self._stats["errors"] += 1
-            # Put entries back if processing failed
-            self.batch.extend(batch_to_process)
-            if self.async_config.error_callback:
-                self.async_config.error_callback(e)
+            self._handle_batch_error(e, batch_to_process)
 
     def _create_log_record(self, entry: AsyncLogEntry) -> logging.LogRecord:
         """Create LogRecord from AsyncLogEntry"""
