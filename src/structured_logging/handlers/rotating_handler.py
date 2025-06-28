@@ -122,15 +122,16 @@ class RotatingFileHandler(logging.Handler):
             self.stream.flush()
             self.last_flush_time = time.time()
 
-    def do_rollover(self):
-        """Perform log file rotation"""
+    def _close_current_stream(self) -> None:
+        """Close current log stream"""
         if self.stream:
             self.stream.close()
             self.stream = None
 
-        # Generate rotated filenames
+    def _shift_backup_files(self) -> List[str]:
+        """Shift existing backup files and return list of rotated files"""
         rotated_files = []
-
+        
         # Shift existing backup files
         for i in range(self.config.backup_count - 1, 0, -1):
             sfn = f"{self.base_filename}.{i}"
@@ -140,7 +141,7 @@ class RotatingFileHandler(logging.Handler):
                     os.remove(dfn)
                 os.rename(sfn, dfn)
                 rotated_files.append(dfn)
-
+        
         # Move current file to .1
         dfn = f"{self.base_filename}.1"
         if os.path.exists(dfn):
@@ -148,26 +149,37 @@ class RotatingFileHandler(logging.Handler):
         if os.path.exists(self.base_filename):
             os.rename(self.base_filename, dfn)
             rotated_files.append(dfn)
+            
+        return rotated_files
 
-        # Compress rotated files if configured
-        if self.config.compress_rotated and rotated_files:
-            if self.config.async_compression and self.executor:
-                # Compress asynchronously
-                for filename in rotated_files:
-                    self.executor.submit(self._compress_file, filename)
-            else:
-                # Compress synchronously
-                for filename in rotated_files:
-                    self._compress_file(filename)
+    def _compress_rotated_files(self, rotated_files: List[str]) -> None:
+        """Compress rotated files based on configuration"""
+        if not (self.config.compress_rotated and rotated_files):
+            return
+            
+        if self.config.async_compression and self.executor:
+            for filename in rotated_files:
+                self.executor.submit(self._compress_file, filename)
+        else:
+            for filename in rotated_files:
+                self._compress_file(filename)
 
-        # Archive old logs if configured
-        if self.config.archive_old_logs:
-            if self.config.async_compression and self.executor:
-                self.executor.submit(self._archive_old_logs)
-            else:
-                self._archive_old_logs()
+    def _trigger_archiving(self) -> None:
+        """Trigger archiving of old logs if configured"""
+        if not self.config.archive_old_logs:
+            return
+            
+        if self.config.async_compression and self.executor:
+            self.executor.submit(self._archive_old_logs)
+        else:
+            self._archive_old_logs()
 
-        # Reopen the log file
+    def do_rollover(self):
+        """Perform log file rotation"""
+        self._close_current_stream()
+        rotated_files = self._shift_backup_files()
+        self._compress_rotated_files(rotated_files)
+        self._trigger_archiving()
         self._open_stream()
 
     def _compress_file(self, filename: str):
