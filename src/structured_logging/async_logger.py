@@ -91,6 +91,29 @@ class AsyncLogProcessor:
         )
         self.workers.append(flush_task)
 
+    def _cancel_active_workers(self) -> None:
+        """Cancel all active worker tasks"""
+        for worker in self.workers:
+            if not worker.done():
+                worker.cancel()
+
+    async def _wait_for_workers(self, timeout: float) -> None:
+        """Wait for all workers to finish with timeout"""
+        try:
+            await asyncio.wait_for(
+                asyncio.gather(*self.workers, return_exceptions=True), 
+                timeout=timeout
+            )
+        except asyncio.TimeoutError:
+            pass
+        finally:
+            self.workers.clear()
+
+    def _final_stream_flush(self) -> None:
+        """Perform final flush of output stream"""
+        if hasattr(self.stream, "flush"):
+            self.stream.flush()
+
     async def stop(self, timeout: Optional[float] = None) -> None:
         """Stop the async log processor"""
         if not self.running:
@@ -98,35 +121,17 @@ class AsyncLogProcessor:
 
         self.running = False
         self._shutdown_event.set()
-
-        # Process remaining queue items
+        
         await self._drain_queue()
-
-        # Flush remaining logs
         await self._flush_batch()
-
-        # Cancel workers gracefully
-        for worker in self.workers:
-            if not worker.done():
-                worker.cancel()
-
-        # Wait for workers to finish
+        
+        self._cancel_active_workers()
+        
         if timeout is None:
             timeout = self.async_config.shutdown_timeout
-
-        try:
-            await asyncio.wait_for(
-                asyncio.gather(*self.workers, return_exceptions=True), timeout=timeout
-            )
-        except asyncio.TimeoutError:
-            # Force cancellation if timeout exceeded
-            pass
-        finally:
-            self.workers.clear()
-
-        # Flush output stream one final time
-        if hasattr(self.stream, "flush"):
-            self.stream.flush()
+            
+        await self._wait_for_workers(timeout)
+        self._final_stream_flush()
 
     async def enqueue_log(self, entry: AsyncLogEntry) -> bool:
         """Enqueue a log entry for processing"""
