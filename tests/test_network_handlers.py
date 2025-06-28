@@ -385,6 +385,8 @@ class TestSocketHandler:
 
     @patch("socket.socket")
     def test_tcp_message_send(self, mock_socket_class):
+        from queue import Empty
+        
         mock_socket = Mock()
         mock_socket.type = socket.SOCK_STREAM  # Important: mark as TCP
         mock_socket_class.return_value = mock_socket
@@ -394,7 +396,7 @@ class TestSocketHandler:
 
         # Mock the connection pool to be empty (force new connection)
         handler.connections = Mock()
-        handler.connections.get_nowait.side_effect = Exception("Empty")
+        handler.connections.get_nowait.side_effect = Empty("Empty")
         handler.connections.put_nowait = Mock()
 
         record = logging.LogRecord("test", logging.INFO, "", 0, "TCP test", (), None)
@@ -452,8 +454,6 @@ class TestNetworkLoggerIntegration:
     """Integration tests for network handlers with logger"""
 
     def test_syslog_logger_creation(self):
-        from structured_logging.network_handlers import SyslogConfig
-
         syslog_config = SyslogConfig(host="syslog.test.com")
         config = LoggerConfig(output_type="network", network_config=syslog_config)
 
@@ -464,8 +464,6 @@ class TestNetworkLoggerIntegration:
         assert isinstance(logger.handlers[0], SyslogHandler)
 
     def test_http_logger_creation(self):
-        from structured_logging.network_handlers import HTTPConfig
-
         http_config = HTTPConfig(url="https://api.test.com/logs")
         config = LoggerConfig(output_type="network", network_config=http_config)
 
@@ -476,8 +474,6 @@ class TestNetworkLoggerIntegration:
         assert isinstance(logger.handlers[0], HTTPHandler)
 
     def test_socket_logger_creation(self):
-        from structured_logging.network_handlers import SocketConfig
-
         socket_config = SocketConfig(protocol="tcp", host="socket.test.com")
         config = LoggerConfig(output_type="network", network_config=socket_config)
 
@@ -488,8 +484,6 @@ class TestNetworkLoggerIntegration:
         assert isinstance(logger.handlers[0], SocketHandler)
 
     def test_console_plus_network_output(self):
-        from structured_logging.network_handlers import SyslogConfig
-
         syslog_config = SyslogConfig()
         config = LoggerConfig(
             output_type="console+network", network_config=syslog_config
@@ -508,8 +502,6 @@ class TestNetworkLoggerIntegration:
         """Test actual logging through network handler"""
         mock_socket = Mock()
         mock_socket_class.return_value = mock_socket
-
-        from structured_logging.network_handlers import SyslogConfig
 
         syslog_config = SyslogConfig(host="test.syslog.com")
         config = LoggerConfig(
