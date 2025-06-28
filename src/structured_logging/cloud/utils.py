@@ -182,3 +182,125 @@ def create_stackdriver_logger(
         log_name=log_name,
         log_level=log_level
     )
+
+
+def create_azure_monitor_logger(
+    name: str,
+    workspace_id: Optional[str] = None,
+    workspace_key: Optional[str] = None,
+    dce_endpoint: Optional[str] = None,
+    dcr_immutable_id: Optional[str] = None,
+    log_type: str = "StructuredLogs",
+    log_level: str = "INFO"
+) -> Any:
+    """
+    Create a logger configured for Azure Monitor
+    
+    Args:
+        name: Logger name
+        workspace_id: Log Analytics workspace ID (for direct API)
+        workspace_key: Log Analytics workspace key (for direct API)
+        dce_endpoint: Data Collection Endpoint URL (for DCE ingestion)
+        dcr_immutable_id: Data Collection Rule immutable ID (for DCE ingestion)
+        log_type: Table name in Log Analytics
+        log_level: Logging level
+        
+    Returns:
+        Configured logger instance
+        
+    Example:
+        # Using workspace ID and key
+        logger = create_azure_monitor_logger(
+            "my_app",
+            workspace_id="12345678-1234-1234-1234-123456789012",
+            workspace_key="your_key_here",
+            log_type="ApplicationLogs"
+        )
+        
+        # Using DCE with managed identity
+        logger = create_azure_monitor_logger(
+            "my_app",
+            dce_endpoint="https://my-dce.eastus.ingest.monitor.azure.com",
+            dcr_immutable_id="dcr-1234567890abcdef"
+        )
+    """
+    from .azure import AzureMonitorConfig, AzureMonitorHandler
+    
+    # Create Azure Monitor configuration
+    azure_config = AzureMonitorConfig(
+        workspace_id=workspace_id,
+        workspace_key=workspace_key,
+        dce_endpoint=dce_endpoint,
+        dcr_immutable_id=dcr_immutable_id,
+        log_type=log_type,
+        include_cloud_role=True
+    )
+    
+    # Create logger config
+    logger_config = LoggerConfig(
+        log_level=log_level,
+        formatter_type="json",
+        include_timestamp=True,
+        include_request_id=True
+    )
+    
+    # Get logger
+    logger = get_logger(name, logger_config)
+    
+    # Add Azure Monitor handler
+    azure_handler = AzureMonitorHandler(azure_config)
+    logger.addHandler(azure_handler)
+    
+    return logger
+
+
+def create_application_insights_logger(
+    name: str,
+    instrumentation_key: str,
+    cloud_role_name: Optional[str] = None,
+    log_level: str = "INFO"
+) -> Any:
+    """
+    Create a logger configured for Application Insights
+    
+    Args:
+        name: Logger name
+        instrumentation_key: Application Insights instrumentation key
+        cloud_role_name: Override cloud role name
+        log_level: Logging level
+        
+    Returns:
+        Configured logger instance
+        
+    Example:
+        logger = create_application_insights_logger(
+            "my_app",
+            instrumentation_key="12345678-1234-1234-1234-123456789012",
+            cloud_role_name="MyWebApp"
+        )
+    """
+    from .azure import ApplicationInsightsConfig, ApplicationInsightsHandler
+    
+    # Create Application Insights configuration
+    appinsights_config = ApplicationInsightsConfig(
+        instrumentation_key=instrumentation_key,
+        cloud_role_name=cloud_role_name,
+        include_cloud_role=True
+    )
+    
+    # Create logger config
+    logger_config = LoggerConfig(
+        log_level=log_level,
+        formatter_type="json",
+        include_timestamp=True,
+        include_request_id=True
+    )
+    
+    # Get logger
+    logger = get_logger(name, logger_config)
+    
+    # Add Application Insights handler
+    appinsights_handler = ApplicationInsightsHandler(appinsights_config)
+    logger.addHandler(appinsights_handler)
+    
+    return logger

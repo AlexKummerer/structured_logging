@@ -38,3 +38,20 @@ try:
     ])
 except ImportError:
     pass
+
+# Azure Monitor
+try:
+    from .azure import (
+        AzureMonitorConfig,
+        AzureMonitorHandler,
+        ApplicationInsightsConfig,
+        ApplicationInsightsHandler,
+    )
+    __all__.extend([
+        "AzureMonitorConfig",
+        "AzureMonitorHandler",
+        "ApplicationInsightsConfig",
+        "ApplicationInsightsHandler",
+    ])
+except ImportError:
+    pass

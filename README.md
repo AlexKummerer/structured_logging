@@ -7,7 +7,7 @@ A flexible Python library for structured JSON logging with context management, a
 ### 🚀 **Version 0.7.0 (In Development) - Cloud Platform Integration**
 - **☁️ AWS CloudWatch**: Native integration with automatic batching, compression, and retry logic
 - **🌩️ Google Cloud Logging**: Stackdriver integration with resource types and structured logging
-- **🔜 Azure Monitor**: (Coming soon) Application Insights integration
+- **☔ Azure Monitor**: Log Analytics, Application Insights, and DCE integration with managed identity
 
 ### 🧬 **Version 0.6.0 - Scientific & Network Integration**
 - **🧬 Scientific Data Support**: Native NumPy, Pandas, and SciPy integration with intelligent serialization
@@ -37,6 +37,7 @@ pip install structured-logging
 pip install structured-logging[scientific]  # NumPy, Pandas, SciPy support
 pip install structured-logging[aws]         # AWS CloudWatch integration
 pip install structured-logging[gcp]         # Google Cloud Logging integration
+pip install structured-logging[azure]       # Azure Monitor integration
 pip install structured-logging[all]         # All optional dependencies
 ```
 
@@ -122,6 +123,20 @@ logger = create_google_cloud_logger(
 logger.info("Application started in GKE",
            pod_name="api-7f8b9c-xyz",
            container_name="api")
+
+# Azure Monitor Integration
+from structured_logging.cloud.utils import create_azure_monitor_logger
+
+logger = create_azure_monitor_logger(
+    name="my_application",
+    workspace_id="12345678-1234-1234-1234-123456789012",
+    workspace_key="your_workspace_key",
+    log_type="ApplicationLogs"
+)
+
+logger.info("Application started on Azure",
+           subscription_id="sub-12345",
+           resource_group="production-rg")
 ```
 
 ### Network Logging

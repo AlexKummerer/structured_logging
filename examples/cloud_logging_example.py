@@ -6,6 +6,7 @@ This example demonstrates how to use the structured logging library with AWS Clo
 
 import os
 import time
+from unittest.mock import patch
 from structured_logging import get_logger, request_context
 from structured_logging.cloud import CloudWatchConfig, CloudWatchHandler
 from structured_logging.cloud.utils import create_cloudwatch_logger
@@ -306,16 +307,119 @@ def stackdriver_legacy_example():
     print("✓ Logs sent via Stackdriver alias")
 
 
+def azure_monitor_basic_example():
+    """Basic Azure Monitor example"""
+    print("\n=== Basic Azure Monitor Example ===")
+    
+    from structured_logging.cloud.utils import create_azure_monitor_logger
+    
+    # Create Azure Monitor logger with workspace
+    logger = create_azure_monitor_logger(
+        name="my_application",
+        workspace_id="12345678-1234-1234-1234-123456789012",
+        workspace_key="your_workspace_key_here",  # Primary or secondary key
+        log_type="ApplicationLogs"  # Table name in Log Analytics
+    )
+    
+    # Log some messages
+    logger.info("Application started on Azure")
+    logger.warning("This is a warning message")
+    logger.error("An error occurred", extra={"error_code": "E001"})
+    
+    print("✓ Logs sent to Azure Monitor")
+
+
+def azure_dce_example():
+    """Azure Monitor with Data Collection Endpoint"""
+    print("\n=== Azure DCE Example ===")
+    
+    from structured_logging.cloud import AzureMonitorConfig, AzureMonitorHandler
+    
+    # Configure for DCE with managed identity
+    config = AzureMonitorConfig(
+        dce_endpoint="https://my-dce.eastus.ingest.monitor.azure.com",
+        dcr_immutable_id="dcr-1234567890abcdef",
+        stream_name="Custom-StructuredLogs",
+        include_cloud_role=True
+    )
+    
+    logger = get_logger("dce_app")
+    handler = AzureMonitorHandler(config)
+    logger.addHandler(handler)
+    
+    # Log with Azure context
+    logger.info("Using Data Collection Endpoint", extra={
+        "ctx_subscription": "Production",
+        "ctx_region": "East US",
+        "ctx_managed_identity": True
+    })
+    
+    print("✓ Logs sent via DCE")
+
+
+def application_insights_example():
+    """Application Insights example"""
+    print("\n=== Application Insights Example ===")
+    
+    from structured_logging.cloud.utils import create_application_insights_logger
+    
+    # Create Application Insights logger
+    logger = create_application_insights_logger(
+        name="insights_app",
+        instrumentation_key="12345678-1234-1234-1234-123456789012",
+        cloud_role_name="MyWebApp"
+    )
+    
+    # Log application telemetry
+    logger.info("Page loaded", extra={
+        "ctx_page": "/products",
+        "ctx_duration_ms": 234,
+        "ctx_user_agent": "Mozilla/5.0"
+    })
+    
+    logger.error("Database connection failed", extra={
+        "ctx_database": "products-db",
+        "ctx_retry_count": 3
+    })
+    
+    print("✓ Telemetry sent to Application Insights")
+
+
+def azure_service_detection_example():
+    """Azure service auto-detection example"""
+    print("\n=== Azure Service Detection Example ===")
+    
+    import os
+    from structured_logging.cloud import AzureMonitorConfig, AzureMonitorHandler
+    
+    # Simulate Azure App Service environment
+    with patch.dict('os.environ', {
+        'WEBSITE_SITE_NAME': 'my-web-app',
+        'WEBSITE_INSTANCE_ID': 'instance-001'
+    }):
+        config = AzureMonitorConfig(
+            workspace_id="test-workspace",
+            workspace_key="test-key"
+        )
+        
+        handler = AzureMonitorHandler(config)
+        
+        # Cloud role is auto-detected
+        print(f"✓ Detected cloud role: {handler.cloud_role_name}")
+        print(f"✓ Detected instance: {handler.cloud_role_instance}")
+
+
 if __name__ == "__main__":
     print("=== Cloud Platform Logging Examples ===")
     print("\nSelect platform:")
     print("1. AWS CloudWatch")
     print("2. Google Cloud Logging")
-    print("3. Both")
+    print("3. Azure Monitor")
+    print("4. All platforms")
     
-    choice = input("\nEnter choice (1-3): ").strip()
+    choice = input("\nEnter choice (1-4): ").strip()
     
-    if choice in ["1", "3"]:
+    if choice in ["1", "4"]:
         print("\n=== AWS CloudWatch Examples ===")
         print("\nNOTE: These examples require:")
         print("1. AWS credentials configured (via env vars, ~/.aws/credentials, or IAM role)")
@@ -351,7 +455,7 @@ if __name__ == "__main__":
                 print("2. Permissions to write to CloudWatch Logs")
                 print("3. Network connectivity to AWS")
     
-    if choice in ["2", "3"]:
+    if choice in ["2", "4"]:
         print("\n=== Google Cloud Logging Examples ===")
         print("\nNOTE: These examples require:")
         print("1. Google Cloud credentials (service account, gcloud auth, or metadata)")
@@ -383,3 +487,37 @@ if __name__ == "__main__":
             print("2. A Google Cloud project set")
             print("3. Permissions to write logs")
             print("4. Network connectivity to Google Cloud")
+    
+    if choice in ["3", "4"]:
+        print("\n=== Azure Monitor Examples ===")
+        print("\nNOTE: These examples require:")
+        print("1. Azure credentials (workspace key, managed identity, or service principal)")
+        print("2. Log Analytics workspace or Application Insights resource")
+        print("3. The 'requests' package: pip install structured-logging[azure]")
+        
+        # Check if requests is available
+        try:
+            import requests
+            print("\n✓ requests is installed")
+        except ImportError:
+            print("\n✗ requests not found. Install with: pip install structured-logging[azure]")
+            if choice == "3":
+                exit(1)
+        else:
+            # Run Azure examples
+            try:
+                azure_monitor_basic_example()
+                azure_dce_example()
+                application_insights_example()
+                azure_service_detection_example()
+                
+                print("\n=== Azure examples completed ===")
+                print("Check your Azure Monitor Log Analytics workspace or Application Insights to see the logs!")
+                
+            except Exception as e:
+                print(f"\n✗ Error running Azure examples: {e}")
+                print("\nMake sure you have:")
+                print("1. Valid Azure credentials configured")
+                print("2. A Log Analytics workspace with valid key")
+                print("3. Or Application Insights with instrumentation key")
+                print("4. Network connectivity to Azure")

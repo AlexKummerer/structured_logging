@@ -637,15 +637,382 @@ handler = StackdriverHandler(config)
 logger = create_stackdriver_logger("my_app")
 ```
 
-## Coming Soon
+## Azure Monitor
 
-### Azure Monitor
+### Installation
+
+To use Azure Monitor integration, install with the Azure extras:
+
+```bash
+pip install structured-logging[azure]
+```
+
+This will install the required dependencies:
+- `requests` for Log Analytics and Application Insights APIs
+- `azure-monitor-ingestion` for Data Collection Endpoint (DCE)
+- `azure-identity` for managed identity authentication
+
+### Quick Start
+
+Azure Monitor supports three ingestion methods:
+
+#### 1. Log Analytics Workspace (Direct API)
 
 ```python
+from structured_logging.cloud.utils import create_azure_monitor_logger
+
+# Create an Azure Monitor logger
+logger = create_azure_monitor_logger(
+    name="my_application",
+    workspace_id="12345678-1234-1234-1234-123456789012",
+    workspace_key="your_workspace_key_here",
+    log_type="ApplicationLogs"  # Table name in Log Analytics
+)
+
+# Start logging
+logger.info("Application started")
+logger.error("An error occurred", extra={"error_code": "E001"})
+```
+
+#### 2. Data Collection Endpoint (DCE) with Managed Identity
+
+```python
+from structured_logging.cloud.utils import create_azure_monitor_logger
+
+# Using DCE with managed identity (recommended for production)
+logger = create_azure_monitor_logger(
+    name="my_application",
+    dce_endpoint="https://my-dce.eastus.ingest.monitor.azure.com",
+    dcr_immutable_id="dcr-1234567890abcdef"
+)
+
+logger.info("Running on Azure with managed identity")
+```
+
+#### 3. Application Insights
+
+```python
+from structured_logging.cloud.utils import create_application_insights_logger
+
+# Create an Application Insights logger
+logger = create_application_insights_logger(
+    name="my_application",
+    instrumentation_key="12345678-1234-1234-1234-123456789012",
+    cloud_role_name="MyWebApp"
+)
+
+logger.info("Application Insights tracking enabled")
+```
+
+### Configuration
+
+#### Basic Configuration
+
+```python
+from structured_logging import get_logger
 from structured_logging.cloud import AzureMonitorConfig, AzureMonitorHandler
 
+# Configure Azure Monitor
 config = AzureMonitorConfig(
-    instrumentation_key="your-key",
-    log_type="ApplicationLogs"
+    # Choose one authentication method:
+    
+    # Option 1: Log Analytics workspace
+    workspace_id="your-workspace-id",
+    workspace_key="your-workspace-key",
+    
+    # Option 2: Data Collection Endpoint
+    # dce_endpoint="https://my-dce.region.ingest.monitor.azure.com",
+    # dcr_immutable_id="dcr-immutable-id",
+    
+    # Option 3: Application Insights
+    # instrumentation_key="your-instrumentation-key",
+    
+    # Common settings
+    log_type="StructuredLogs",  # Table name
+    include_cloud_role=True
 )
+
+# Create logger and add handler
+logger = get_logger("my_app")
+azure_handler = AzureMonitorHandler(config)
+logger.addHandler(azure_handler)
+```
+
+#### Advanced Configuration
+
+```python
+config = AzureMonitorConfig(
+    # Authentication
+    workspace_id="your-workspace-id",
+    workspace_key="your-workspace-key",
+    
+    # Service principal auth (for DCE)
+    # tenant_id="your-tenant-id",
+    # client_id="your-client-id",
+    # client_secret="your-client-secret",
+    
+    # Log settings
+    log_type="ApplicationLogs",
+    time_field="TimeGenerated",  # Timestamp field name
+    
+    # Performance
+    use_compression=True,  # Compress large payloads
+    batch_size=200,
+    flush_interval=10.0,
+    async_upload=True,
+    
+    # Cloud role information
+    include_cloud_role=True,
+    cloud_role_name="MyAPIService",  # Override auto-detection
+    cloud_role_instance="api-server-1",
+    
+    # Retry configuration
+    max_retries=5,
+    retry_delay=2.0,
+    exponential_backoff=True
+)
+```
+
+### Authentication Methods
+
+#### 1. Workspace Key (Direct API)
+```python
+config = AzureMonitorConfig(
+    workspace_id="12345678-1234-1234-1234-123456789012",
+    workspace_key="your_primary_or_secondary_key"
+)
+```
+
+#### 2. Managed Identity (DCE)
+```python
+config = AzureMonitorConfig(
+    dce_endpoint="https://my-dce.eastus.ingest.monitor.azure.com",
+    dcr_immutable_id="dcr-1234567890abcdef",
+    use_managed_identity=True  # Default
+)
+```
+
+#### 3. Service Principal (DCE)
+```python
+config = AzureMonitorConfig(
+    dce_endpoint="https://my-dce.eastus.ingest.monitor.azure.com",
+    dcr_immutable_id="dcr-1234567890abcdef",
+    tenant_id="your-tenant-id",
+    client_id="your-client-id",
+    client_secret="your-client-secret"
+)
+```
+
+#### 4. Application Insights Key
+```python
+config = ApplicationInsightsConfig(
+    instrumentation_key="12345678-1234-1234-1234-123456789012"
+)
+```
+
+### Azure Service Integration
+
+The handler automatically detects the Azure service environment:
+
+```python
+# Automatic detection for:
+# - Azure App Service (WEBSITE_SITE_NAME)
+# - Azure Functions (FUNCTIONS_WORKER_RUNTIME)
+# - Azure Container Apps (CONTAINER_APP_NAME)
+# - Azure VMs (hostname)
+
+# Override if needed:
+config = AzureMonitorConfig(
+    workspace_id="...",
+    workspace_key="...",
+    cloud_role_name="CustomServiceName",
+    cloud_role_instance="custom-instance-1"
+)
+```
+
+### Integration with Context
+
+Azure Monitor handler works seamlessly with the context system:
+
+```python
+from structured_logging.context import request_context
+
+with request_context(user_id="user123", subscription_tier="premium"):
+    logger.info("Processing premium user request")
+    # Logs will include user_id and subscription_tier in Properties
+```
+
+### Structured Output
+
+Logs are sent to Azure Monitor with structured fields:
+
+```json
+{
+  "TimeGenerated": "2025-06-28T12:34:56.789Z",
+  "Message": "Processing premium user request",
+  "SeverityLevel": 1,
+  "Logger": "my_app",
+  "Module": "main",
+  "Function": "process_request",
+  "Line": 42,
+  "CloudRoleName": "MyAPIService",
+  "CloudRoleInstance": "api-server-1",
+  "Properties": {
+    "user_id": "user123",
+    "subscription_tier": "premium"
+  }
+}
+```
+
+### Best Practices
+
+#### 1. Choose the Right Ingestion Method
+
+- **DCE with Managed Identity**: Best for production Azure workloads
+- **Log Analytics Direct API**: Good for external services or testing
+- **Application Insights**: Best for application telemetry and tracing
+
+#### 2. Log Type Naming
+
+Use meaningful log type names (table names):
+
+```python
+# By service
+log_type = "APILogs"
+log_type = "WorkerLogs"
+
+# By environment
+log_type = "ProductionLogs"
+log_type = "StagingLogs"
+
+# By component
+log_type = "AuthenticationLogs"
+log_type = "PaymentLogs"
+```
+
+#### 3. Custom Properties
+
+Add structured data as properties:
+
+```python
+logger.info("Order processed", extra={
+    "ctx_order_id": "ORD-12345",
+    "ctx_amount": 99.99,
+    "ctx_currency": "USD",
+    "ctx_items_count": 3
+})
+```
+
+#### 4. Performance Optimization
+
+For high-volume applications:
+
+```python
+config = AzureMonitorConfig(
+    workspace_id="...",
+    workspace_key="...",
+    use_compression=True,  # Compress payloads
+    batch_size=500,  # Large batches
+    flush_interval=30.0,  # Less frequent flushes
+    async_upload=True  # Non-blocking
+)
+```
+
+For real-time monitoring:
+
+```python
+config = AzureMonitorConfig(
+    workspace_id="...",
+    workspace_key="...",
+    batch_size=10,  # Small batches
+    flush_interval=1.0,  # Frequent flushes
+)
+```
+
+### Monitoring with KQL
+
+Query logs using Kusto Query Language (KQL) in Azure Monitor:
+
+```kql
+// Find errors by user
+StructuredLogs_CL
+| where SeverityLevel >= 3
+| where Properties.user_id == "user123"
+| project TimeGenerated, Message, Properties
+
+// Response time analysis
+ApplicationLogs_CL
+| where Properties.response_time_ms > 1000
+| summarize avg(Properties.response_time_ms) by bin(TimeGenerated, 5m)
+
+// Error rate by cloud role
+StructuredLogs_CL
+| where SeverityLevel >= 3
+| summarize ErrorCount = count() by CloudRoleName, bin(TimeGenerated, 1h)
+| render timechart
+```
+
+### Troubleshooting
+
+#### No logs appearing in Azure Monitor
+
+1. Check authentication:
+   - Workspace: Verify workspace ID and key
+   - DCE: Check managed identity or service principal permissions
+   - App Insights: Verify instrumentation key
+
+2. Check permissions:
+   - For DCE: `Microsoft.Insights/dataCollectionRules/data/write`
+   - For workspace: Key must be valid and not expired
+
+3. Enable debug logging:
+```python
+import logging
+logging.basicConfig(level=logging.DEBUG)
+```
+
+#### Authentication errors
+
+1. For workspace API:
+```python
+# Verify key is base64 encoded
+import base64
+key = base64.b64encode(b"your_key").decode('utf-8')
+```
+
+2. For managed identity:
+```bash
+# Check identity is assigned
+az identity show --name <identity-name> --resource-group <rg>
+```
+
+#### High costs
+
+1. Use batching and compression:
+```python
+config = AzureMonitorConfig(
+    use_compression=True,
+    batch_size=1000,
+    flush_interval=60.0
+)
+```
+
+2. Set appropriate retention in Azure Monitor
+3. Use sampling for high-volume debug logs
+
+### Application Insights Integration
+
+For full application telemetry:
+
+```python
+from structured_logging.cloud import ApplicationInsightsConfig
+
+config = ApplicationInsightsConfig(
+    instrumentation_key="your-key",
+    cloud_role_name="MyWebApp",
+    cloud_role_instance="web-1"
+)
+
+# Logs appear in Application Insights traces
+# Can correlate with requests, dependencies, and exceptions
 ```
