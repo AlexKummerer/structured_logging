@@ -230,13 +230,29 @@ class TestFastAPIIntegration:
 
         # Check query params masking
         query_params = request_log.get("query_params", {})
-        assert query_params.get("password") == "[MASKED]"
-        assert query_params.get("api_key") == "[MASKED]"
+        # Handle both direct string and type-detected format
+        password_val = query_params.get("password")
+        if isinstance(password_val, dict) and password_val.get("value") == "[MASKED]":
+            assert True  # Type-detected format
+        else:
+            assert password_val == "[MASKED]"  # Direct string format
+            
+        api_key_val = query_params.get("api_key")
+        if isinstance(api_key_val, dict) and api_key_val.get("value") == "[MASKED]":
+            assert True  # Type-detected format
+        else:
+            assert api_key_val == "[MASKED]"  # Direct string format
+            
         assert query_params.get("normal_param") == "value"  # Should not be masked
 
         # Check headers masking
         headers = request_log.get("headers", {})
-        assert headers.get("authorization") == "[MASKED]"
+        auth_val = headers.get("authorization")
+        if isinstance(auth_val, dict) and auth_val.get("value") == "[MASKED]":
+            assert True  # Type-detected format
+        else:
+            assert auth_val == "[MASKED]"  # Direct string format
+            
         assert headers.get("x-custom") == "value"  # Should not be masked
 
     def test_minimum_duration_filtering(self):
@@ -437,7 +453,7 @@ class TestFlaskIntegration:
 
 class TestEdgeCases:
     def test_fastapi_not_available(self):
-        with patch("structured_logging.integrations.FASTAPI_AVAILABLE", False):
+        with patch("structured_logging.integrations.fastapi.FASTAPI_AVAILABLE", False):
             with pytest.raises(ImportError, match="FastAPI is not installed"):
                 add_structured_logging(MagicMock())
 
