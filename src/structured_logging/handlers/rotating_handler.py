@@ -20,44 +20,47 @@ class RotatingFileHandler(logging.Handler):
     Enhanced rotating file handler with compression and archiving
     """
 
-    def __init__(self, config: FileHandlerConfig):
-        super().__init__()
-        self.config = config
-        self.base_filename = config.filename
-        self.mode = config.mode
-        self.encoding = config.encoding
-
-        # Create directory if it doesn't exist
+    def _setup_directories(self, config: FileHandlerConfig) -> None:
+        """Setup log and archive directories"""
         self.log_dir = Path(self.base_filename).parent
         self.log_dir.mkdir(parents=True, exist_ok=True)
-
-        # Archive directory setup
+        
         if config.archive_directory:
             self.archive_dir = Path(config.archive_directory)
         else:
             self.archive_dir = self.log_dir / "archive"
         self.archive_dir.mkdir(parents=True, exist_ok=True)
 
-        # Current state
-        self.stream: Optional[Any] = None
-        self.bytes_written = 0
-        self.last_flush_time = time.time()
-
-        # Thread pool for async operations
+    def _setup_executor(self, config: FileHandlerConfig) -> None:
+        """Setup thread pool executor for async operations"""
         self.executor: Optional[ThreadPoolExecutor] = None
         if config.async_compression:
             self.executor = ThreadPoolExecutor(
                 max_workers=2, thread_name_prefix="log_handler"
             )
 
-        # Initialize
-        self._open_stream()
-
+    def _perform_startup_tasks(self, config: FileHandlerConfig) -> None:
+        """Perform configured startup tasks"""
         if config.rotate_on_startup:
             self.do_rollover()
-
         if config.cleanup_on_startup:
             self._cleanup_old_files()
+
+    def __init__(self, config: FileHandlerConfig):
+        super().__init__()
+        self.config = config
+        self.base_filename = config.filename
+        self.mode = config.mode
+        self.encoding = config.encoding
+        
+        self.stream: Optional[Any] = None
+        self.bytes_written = 0
+        self.last_flush_time = time.time()
+        
+        self._setup_directories(config)
+        self._setup_executor(config)
+        self._open_stream()
+        self._perform_startup_tasks(config)
 
     def _open_stream(self):
         """Open the log file stream"""
