@@ -39,7 +39,7 @@ def _get_or_create_formatter(config: LoggerConfig) -> logging.Formatter:
 
 def _add_console_handler(logger: logging.Logger, config: LoggerConfig, formatter: logging.Formatter) -> None:
     """Add console handler if required"""
-    if "console" in config.output_type:
+    if config.output_type in ["console", "both", "console+network", "all"]:
         console_handler = logging.StreamHandler(sys.stdout)
         console_handler.setFormatter(formatter)
         logger.addHandler(console_handler)
@@ -47,7 +47,7 @@ def _add_console_handler(logger: logging.Logger, config: LoggerConfig, formatter
 
 def _add_file_handler(logger: logging.Logger, config: LoggerConfig, formatter: logging.Formatter) -> None:
     """Add file handler if required"""
-    if "file" in config.output_type and config.file_config:
+    if config.output_type in ["file", "both", "file+network", "all"] and config.file_config:
         file_handler = RotatingFileHandler(config.file_config)
         file_handler.setFormatter(formatter)
         logger.addHandler(file_handler)
@@ -69,7 +69,7 @@ def _create_network_handler(network_config: Any) -> logging.Handler:
 
 def _add_network_handler(logger: logging.Logger, config: LoggerConfig, formatter: logging.Formatter) -> None:
     """Add network handler if required"""
-    if "network" in config.output_type and config.network_config:
+    if config.output_type in ["network", "console+network", "file+network", "all"] and config.network_config:
         network_handler = _create_network_handler(config.network_config)
         network_handler.setFormatter(formatter)
         logger.addHandler(network_handler)

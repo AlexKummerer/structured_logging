@@ -49,6 +49,7 @@ def _merge_custom_context(custom_fields: Dict[str, Any]) -> None:
         set_custom_context(updated_custom)
 
 
+@asynccontextmanager
 async def async_request_context(
     user_id: Optional[str] = None,
     tenant_id: Optional[str] = None,
