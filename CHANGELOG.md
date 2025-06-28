@@ -5,7 +5,21 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.7.0] - In Development
+## [0.8.0] - In Development
+
+### Added - Stream Processing
+- **Core Stream Processor**: Real-time log processing with async pipeline, backpressure handling, and state management
+- **Window Operations**: Tumbling, sliding, and session windows with configurable aggregations
+- **Stream Sources**: File tailing, WebSocket, HTTP polling, memory, and Kafka placeholder
+- **Stream Sinks**: Console, metrics export, WebSocket broadcast, and storage persistence
+
+### Added - Real-time Monitoring Dashboard
+- **Web Dashboard**: Real-time log visualization with WebSocket support for live updates
+- **Metrics Aggregation**: Time-series metrics with automatic aggregation and retention
+- **Alert Management**: Rule-based alerting with rate limiting, cooldowns, and multiple notification channels
+- **Visualizations**: Pre-built charts including log volume, metrics trends, error heatmaps, and KPI gauges
+
+## [0.7.0] - 2025-06-28
 
 ### Added - Cloud Platform Integration
 - **AWS CloudWatch**: Native integration with automatic batching, compression, and retry logic
