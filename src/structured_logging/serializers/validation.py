@@ -72,23 +72,39 @@ class SchemaValidator:
 
         return compiled
 
+    def _check_required_fields(self, schema: Dict[str, Any], data: Dict[str, Any]) -> List[str]:
+        """Check for missing required fields"""
+        errors = []
+        for field, constraints in schema.items():
+            if constraints.get("required", True) and field not in data:
+                errors.append(f"Required field '{field}' is missing")
+        return errors
+
+    def _validate_all_fields(self, schema: Dict[str, Any], data: Dict[str, Any]) -> List[str]:
+        """Validate all fields in data against schema"""
+        errors = []
+        for field, value in data.items():
+            if field in schema:
+                field_errors = self._validate_field(field, value, schema[field])
+                errors.extend(field_errors)
+        return errors
+
+    def _handle_validation_errors(self, errors: List[str], strict: bool) -> bool:
+        """Handle validation errors based on strict mode"""
+        if errors:
+            self._validation_stats["validation_failures"] += 1
+            if strict:
+                error_msg = f"Validation failed: {'; '.join(errors[:5])}"
+                if len(errors) > 5:
+                    error_msg += f" ... and {len(errors) - 5} more"
+                raise ValidationError(error_msg)
+            return False
+        return True
+
     def validate(
         self, data: Dict[str, Any], schema_name: str, strict: bool = False
     ) -> bool:
-        """
-        Validate data against a registered schema
-
-        Args:
-            data: Data to validate
-            schema_name: Name of registered schema
-            strict: If True, raise ValidationError on failure
-
-        Returns:
-            True if valid, False otherwise (unless strict=True)
-
-        Raises:
-            ValidationError: If validation fails and strict=True
-        """
+        """Validate data against a registered schema"""
         start_time = time.perf_counter()
         self._validation_stats["validations_performed"] += 1
 
@@ -98,29 +114,11 @@ class SchemaValidator:
 
             schema = self._schemas[schema_name]
             errors = []
-
-            # Check required fields
-            for field, constraints in schema.items():
-                if constraints.get("required", True) and field not in data:
-                    errors.append(f"Required field '{field}' is missing")
-
-            # Validate fields
-            for field, value in data.items():
-                if field in schema:
-                    field_errors = self._validate_field(field, value, schema[field])
-                    errors.extend(field_errors)
-
-            if errors:
-                self._validation_stats["validation_failures"] += 1
-                if strict:
-                    raise ValidationError(
-                        f"Validation failed: {'; '.join(errors[:5])}"
-                        + (f" ... and {len(errors) - 5} more" if len(errors) > 5 else "")
-                    )
-                return False
-
-            return True
-
+            
+            errors.extend(self._check_required_fields(schema, data))
+            errors.extend(self._validate_all_fields(schema, data))
+            
+            return self._handle_validation_errors(errors, strict)
         finally:
             self._validation_stats["validation_time"] += time.perf_counter() - start_time
 
