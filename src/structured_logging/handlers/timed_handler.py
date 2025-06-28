@@ -14,44 +14,37 @@ class TimedRotatingFileHandler(RotatingFileHandler):
     File handler that rotates based on time intervals
     """
 
-    def __init__(
-        self, config: FileHandlerConfig, when: str = "midnight", interval: int = 1
-    ):
-        """
-        Initialize timed rotating file handler
-
-        Args:
-            config: File handler configuration
-            when: Type of interval ('S', 'M', 'H', 'D', 'midnight', 'W0'-'W6')
-            interval: Number of intervals between rotations
-        """
+    def _parse_interval_type(self, when: str) -> None:
+        """Parse and validate interval type, set interval_seconds and suffix"""
         self.when = when.upper()
-        self.interval = interval
-        self.suffix = None
-        self.ext_match = None
-
-        # Set up time-based rotation parameters
-        if self.when == "S":
-            self.interval_seconds = 1
-            self.suffix = "%Y-%m-%d_%H-%M-%S"
-        elif self.when == "M":
-            self.interval_seconds = 60
-            self.suffix = "%Y-%m-%d_%H-%M"
-        elif self.when == "H":
-            self.interval_seconds = 60 * 60
-            self.suffix = "%Y-%m-%d_%H"
-        elif self.when == "D" or self.when == "MIDNIGHT":
-            self.interval_seconds = 60 * 60 * 24
-            self.suffix = "%Y-%m-%d"
+        
+        interval_map = {
+            "S": (1, "%Y-%m-%d_%H-%M-%S"),
+            "M": (60, "%Y-%m-%d_%H-%M"),
+            "H": (60 * 60, "%Y-%m-%d_%H"),
+            "D": (60 * 60 * 24, "%Y-%m-%d"),
+            "MIDNIGHT": (60 * 60 * 24, "%Y-%m-%d"),
+        }
+        
+        if self.when in interval_map:
+            self.interval_seconds, self.suffix = interval_map[self.when]
         elif self.when.startswith("W"):
             self.interval_seconds = 60 * 60 * 24 * 7
             self.suffix = "%Y-%m-%d"
         else:
             raise ValueError(f"Invalid value for 'when': {when}")
 
-        # Calculate next rollover time
+    def __init__(
+        self, config: FileHandlerConfig, when: str = "midnight", interval: int = 1
+    ):
+        """Initialize timed rotating file handler"""
+        self.interval = interval
+        self.suffix = None
+        self.ext_match = None
+        
+        self._parse_interval_type(when)
         self.rollover_at = self._compute_rollover_time()
-
+        
         super().__init__(config)
 
     def _compute_rollover_time(self) -> float:
