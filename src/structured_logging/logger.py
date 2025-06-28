@@ -79,7 +79,18 @@ def get_logger(name: str, config: Optional[LoggerConfig] = None) -> logging.Logg
     """Create a structured logger with the given name"""
     logger = logging.getLogger(name)
 
-    if not logger.handlers:
+    # Check if we need to reconfigure the logger
+    should_configure = not logger.handlers
+    
+    # If config is explicitly provided and different from default, reconfigure
+    if config is not None and logger.handlers:
+        # Clear existing handlers to apply new config
+        for handler in logger.handlers[:]:  # Copy list to avoid modification during iteration
+            logger.removeHandler(handler)
+            handler.close()
+        should_configure = True
+
+    if should_configure:
         config = config or get_default_config()
         logger.setLevel(getattr(logging, config.log_level.upper()))
         
