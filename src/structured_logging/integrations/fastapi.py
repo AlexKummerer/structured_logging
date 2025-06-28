@@ -103,19 +103,9 @@ class FastAPILoggingMiddleware(BaseHTTPMiddleware):
                 extra={f"ctx_{k}": v for k, v in complete_info.items() if v is not None},
             )
 
-    async def dispatch(self, request: Request, call_next: Callable) -> Response:
-        """Process request and response with logging"""
-        if self._should_skip_request(request):
-            return await call_next(request)
-
-        request_id = str(uuid.uuid4())
-        start_time = time.time()
-        
-        request_info = await self._extract_request_info(request)
-        request_info["request_id"] = request_id
-        
-        self._log_request_start(request, request_info)
-        
+    async def _process_request(self, request: Request, call_next: Callable, 
+                              request_info: Dict[str, Any], start_time: float) -> Response:
+        """Process request and handle exceptions"""
         exception_occurred = False
         response = None
         
@@ -132,6 +122,21 @@ class FastAPILoggingMiddleware(BaseHTTPMiddleware):
             )
         
         return response
+
+    async def dispatch(self, request: Request, call_next: Callable) -> Response:
+        """Process request and response with logging"""
+        if self._should_skip_request(request):
+            return await call_next(request)
+
+        request_id = str(uuid.uuid4())
+        start_time = time.time()
+        
+        request_info = await self._extract_request_info(request)
+        request_info["request_id"] = request_id
+        
+        self._log_request_start(request, request_info)
+        
+        return await self._process_request(request, call_next, request_info, start_time)
 
     def _get_basic_request_info(self, request: Request) -> Dict[str, Any]:
         """Extract basic request information"""
