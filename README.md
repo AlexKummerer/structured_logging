@@ -38,6 +38,7 @@ pip install structured-logging[scientific]  # NumPy, Pandas, SciPy support
 pip install structured-logging[aws]         # AWS CloudWatch integration
 pip install structured-logging[gcp]         # Google Cloud Logging integration
 pip install structured-logging[azure]       # Azure Monitor integration
+pip install structured-logging[otel]        # OpenTelemetry integration
 pip install structured-logging[all]         # All optional dependencies
 ```
 
@@ -137,6 +138,22 @@ logger = create_azure_monitor_logger(
 logger.info("Application started on Azure",
            subscription_id="sub-12345",
            resource_group="production-rg")
+
+# OpenTelemetry Integration
+from structured_logging.integrations import create_otel_logger, logged_span
+
+logger = create_otel_logger(
+    name="my_application",
+    enable_trace_correlation=True,
+    include_resource_attributes=True,
+    include_span_attributes=True
+)
+
+# Automatic trace correlation and span context injection
+with logged_span(logger, "user-registration") as span:
+    logger.info("Processing user registration",
+               user_id="user_12345",
+               operation="register")
 ```
 
 ### Network Logging
