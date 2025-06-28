@@ -312,7 +312,8 @@ class TestEnhancedPandasIntegration:
 
         result = serialize_for_logging(categorical_series, config)
 
-        assert result["data_type"] == "categorical"
+        assert "value_analysis" in result
+        assert result["value_analysis"]["data_type"] == "categorical"
         assert result["categories"] == categories
         assert result["ordered"] is True
         assert result["num_categories"] == 3

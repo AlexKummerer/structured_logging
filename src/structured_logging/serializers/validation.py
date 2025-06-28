@@ -248,6 +248,14 @@ class SchemaValidator:
             ),
             "registered_schemas": len(self._schemas),
         }
+    
+    def reset_validation_stats(self) -> None:
+        """Reset validation statistics"""
+        self._validation_stats = {
+            "validations_performed": 0,
+            "validation_failures": 0,
+            "validation_time": 0.0,
+        }
 
 
 class TypeAnnotationExtractor:

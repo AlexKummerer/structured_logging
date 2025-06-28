@@ -577,6 +577,7 @@ class TestIntegrationWithLogging:
     def test_complex_log_entry(self):
         """Test that complex data can be logged without errors"""
         import io
+        import logging
 
         from structured_logging import LoggerConfig, get_logger
         from structured_logging.formatter import StructuredFormatter
@@ -620,6 +621,7 @@ class TestIntegrationWithLogging:
     def test_serialization_error_handling(self):
         """Test that serialization errors don't break logging"""
         import io
+        import logging
 
         from structured_logging import LoggerConfig, get_logger
         from structured_logging.formatter import StructuredFormatter
@@ -1512,7 +1514,7 @@ class TestSchemaValidator:
         # Invalid data - wrong type
         invalid_data = {"name": "John", "age": "thirty", "active": True}
         with pytest.raises(ValidationError):
-            validator.validate(invalid_data, "user")
+            validator.validate(invalid_data, "user", strict=True)
 
     def test_complex_schema_constraints(self):
         """Test complex schema with constraints"""
