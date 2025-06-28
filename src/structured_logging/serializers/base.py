@@ -2,7 +2,7 @@
 Base serialization functions for structured logging
 """
 
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, Union
 
 from .config import SerializationConfig
 from .lazy import _lazy_manager

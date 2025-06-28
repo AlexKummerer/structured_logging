@@ -3,7 +3,7 @@ Enhanced JSON encoder with support for complex Python types
 """
 
 import json
-from typing import Any, Optional
+from typing import Any, Dict, Optional
 
 from .config import SerializationConfig
 from .lazy import LazyDict, LazySerializable
