@@ -18,56 +18,85 @@ class EnhancedJSONEncoder(json.JSONEncoder):
         self.config = config or SerializationConfig()
         self.type_registry = TypeRegistry()
 
-    def default(self, obj: Any) -> Any:
-        """Convert objects to JSON-serializable formats"""
-
-        # Handle lazy serializable objects
+    def _handle_lazy_objects(self, obj: Any) -> Any:
+        """Handle lazy serializable objects"""
         if isinstance(obj, LazySerializable):
             return obj.force_serialize()
-
-        # Handle lazy dictionaries
         if isinstance(obj, LazyDict):
             return obj.force_serialize_all()
+        return None
 
-        # Get custom serializer
+    def _handle_custom_serializer(self, obj: Any) -> Any:
+        """Handle objects with custom serializers"""
         serializer = self.type_registry.get_serializer(obj)
-        if serializer:
-            try:
-                return serializer(obj, self.config)
-            except Exception as e:
-                # Fallback to safe representation
-                return {
-                    "__serialization_error__": str(e),
-                    "__type__": type(obj).__name__,
-                    "__repr__": repr(obj)[:200],  # Truncate repr
-                }
+        if not serializer:
+            return None
+            
+        try:
+            return serializer(obj, self.config)
+        except Exception as e:
+            return {
+                "__serialization_error__": str(e),
+                "__type__": type(obj).__name__,
+                "__repr__": repr(obj)[:200],  # Truncate repr
+            }
 
-        # Handle collections with size limits
-        if isinstance(obj, (list, tuple)):
-            if len(obj) > self.config.max_collection_size:
-                truncated = list(obj[: self.config.max_collection_size])
-                truncated.append(
-                    f"... ({len(obj) - self.config.max_collection_size} more items)"
-                )
-                return truncated
-            return list(obj)
+    def _handle_collections(self, obj: Any) -> Any:
+        """Handle collections with size limits"""
+        if not isinstance(obj, (list, tuple)):
+            return None
+            
+        if len(obj) > self.config.max_collection_size:
+            truncated = list(obj[: self.config.max_collection_size])
+            truncated.append(
+                f"... ({len(obj) - self.config.max_collection_size} more items)"
+            )
+            return truncated
+        return list(obj)
 
-        # Handle strings with truncation
+    def _handle_string_truncation(self, obj: Any) -> Any:
+        """Handle string truncation"""
         if isinstance(obj, str) and self.config.truncate_strings:
             if len(obj) > self.config.truncate_strings:
                 return obj[: self.config.truncate_strings] + "..."
+        return None
 
+    def _safe_repr(self, obj: Any) -> Dict[str, str]:
+        """Create safe representation for unserializable objects"""
+        try:
+            obj_repr = repr(obj)[:200]
+        except Exception as e:
+            obj_repr = f"<repr failed: {str(e)[:50]}>"
+        
+        return {"__unserializable__": type(obj).__name__, "__repr__": obj_repr}
+
+    def default(self, obj: Any) -> Any:
+        """Convert objects to JSON-serializable formats"""
+        # Try lazy objects
+        result = self._handle_lazy_objects(obj)
+        if result is not None:
+            return result
+        
+        # Try custom serializer
+        result = self._handle_custom_serializer(obj)
+        if result is not None:
+            return result
+        
+        # Try collections
+        result = self._handle_collections(obj)
+        if result is not None:
+            return result
+        
+        # Try string truncation
+        result = self._handle_string_truncation(obj)
+        if result is not None:
+            return result
+        
         # Fallback to default behavior
         try:
             return super().default(obj)
         except TypeError:
-            # Last resort: safe string representation
-            try:
-                obj_repr = repr(obj)[:200]
-            except Exception as e:
-                obj_repr = f"<repr failed: {str(e)[:50]}>"
-
-            return {"__unserializable__": type(obj).__name__, "__repr__": obj_repr}
+            return self._safe_repr(obj)
 
 
 def enhanced_json_dumps(

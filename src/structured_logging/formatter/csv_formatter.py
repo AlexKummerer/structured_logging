@@ -28,25 +28,27 @@ class CSVFormatter(logging.Formatter):
         if self.config.include_timestamp:
             self.fieldnames.insert(0, "timestamp")
 
-    def format(self, record: logging.LogRecord) -> str:
-        # Performance optimization: Build log entry efficiently
+    def _build_base_log_entry(self, record: logging.LogRecord) -> Dict[str, Any]:
+        """Build base log entry from record"""
         log_entry: Dict[str, Any] = {
             "level": record.levelname,
             "logger": record.name,
             "message": record.getMessage(),
         }
-
-        # Optimized timestamp generation
+        
         if self.config.include_timestamp:
             log_entry["timestamp"] = fast_timestamp()
+            
+        return log_entry
 
-        # Enhanced context field extraction with serialization
+    def _extract_context_items(self, record: logging.LogRecord) -> Dict[str, str]:
+        """Extract and serialize context fields from record"""
         context_items = {}
         for key, value in record.__dict__.items():
             if key.startswith("ctx_"):
                 context_key = key[4:]
-                # Serialize complex types and convert to string for CSV
                 serialized = serialize_for_logging(value, self.serialization_config)
+                
                 # Convert to string representation for CSV compatibility
                 if isinstance(serialized, (dict, list)):
                     context_items[context_key] = json.dumps(
@@ -54,22 +56,28 @@ class CSVFormatter(logging.Formatter):
                     )
                 else:
                     context_items[context_key] = str(serialized)
+        
+        return context_items
 
-        log_entry.update(context_items)
-
-        # Performance optimization: Calculate fieldnames once
-        all_fieldnames = self.fieldnames + sorted(context_items.keys())
-
-        # Efficient CSV generation
+    def _generate_csv_string(self, log_entry: Dict[str, Any], 
+                           fieldnames: List[str]) -> str:
+        """Generate CSV string from log entry"""
         output = io.StringIO()
         writer = csv.DictWriter(
             output,
-            fieldnames=all_fieldnames,
+            fieldnames=fieldnames,
             extrasaction="ignore",
             lineterminator="",  # No extra newline
         )
         writer.writerow(log_entry)
         csv_string = output.getvalue()
         output.close()
-
         return csv_string
+
+    def format(self, record: logging.LogRecord) -> str:
+        log_entry = self._build_base_log_entry(record)
+        context_items = self._extract_context_items(record)
+        log_entry.update(context_items)
+        
+        all_fieldnames = self.fieldnames + sorted(context_items.keys())
+        return self._generate_csv_string(log_entry, all_fieldnames)
