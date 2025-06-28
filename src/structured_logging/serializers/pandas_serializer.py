@@ -119,6 +119,49 @@ def serialize_dataframe(df: Any, config: SerializationConfig) -> Dict[str, Any]:
     return result
 
 
+def _add_series_memory_usage(series: Any, config: SerializationConfig, result: Dict[str, Any]) -> None:
+    """Add memory usage information to series result"""
+    if config.pandas_include_memory_usage:
+        try:
+            memory_bytes = series.memory_usage(deep=True)
+            result["memory_usage"] = {
+                "bytes": int(memory_bytes),
+                "mb": round(float(memory_bytes / (1024 * 1024)), 3),
+            }
+        except Exception as e:
+            result["memory_usage_error"] = str(e)
+
+
+def _add_series_value_analysis(series: Any, config: SerializationConfig, result: Dict[str, Any]) -> None:
+    """Add value analysis to series result"""
+    try:
+        result["value_analysis"] = _analyze_series_values(series, config)
+    except Exception as e:
+        result["value_analysis_error"] = str(e)
+
+
+def _serialize_series_content(series: Any, config: SerializationConfig, result: Dict[str, Any]) -> None:
+    """Serialize series data based on size"""
+    if len(series) <= config.pandas_max_rows:
+        result["data"] = _serialize_series_data(series, config)
+        result["serialization_method"] = "full"
+    else:
+        result.update(_serialize_series_sample(series, config))
+        result["serialization_method"] = "sampled"
+
+
+def _add_series_statistics(series: Any, config: SerializationConfig, result: Dict[str, Any]) -> None:
+    """Add statistics for numeric series"""
+    if config.pandas_include_describe and pd.api.types.is_numeric_dtype(series):
+        try:
+            describe = series.describe()
+            result["statistics"] = {
+                stat: float(val) for stat, val in describe.items()
+            }
+        except Exception as e:
+            result["statistics_error"] = str(e)
+
+
 def serialize_series(series: Any, config: SerializationConfig) -> Dict[str, Any]:
     """Enhanced Pandas Series serialization"""
     if not HAS_PANDAS:
@@ -131,46 +174,13 @@ def serialize_series(series: Any, config: SerializationConfig) -> Dict[str, Any]
         "__pandas_type__": "Series",
     }
 
-    # Index information
     if config.pandas_include_index:
         result["index_info"] = _serialize_pandas_index(series.index, config)
-
-    # Memory usage
-    if config.pandas_include_memory_usage:
-        try:
-            memory_bytes = series.memory_usage(deep=True)
-            result["memory_usage"] = {
-                "bytes": int(memory_bytes),
-                "mb": round(float(memory_bytes / (1024 * 1024)), 3),
-            }
-        except Exception as e:
-            result["memory_usage_error"] = str(e)
-
-    # Value counts and analysis
-    try:
-        result["value_analysis"] = _analyze_series_values(series, config)
-    except Exception as e:
-        result["value_analysis_error"] = str(e)
-
-    # Data serialization based on size
-    if len(series) <= config.pandas_max_rows:
-        # Small Series: include full data
-        result["data"] = _serialize_series_data(series, config)
-        result["serialization_method"] = "full"
-    else:
-        # Large Series: use sampling
-        result.update(_serialize_series_sample(series, config))
-        result["serialization_method"] = "sampled"
-
-    # Statistics for numeric series
-    if config.pandas_include_describe and pd.api.types.is_numeric_dtype(series):
-        try:
-            describe = series.describe()
-            result["statistics"] = {
-                stat: float(val) for stat, val in describe.items()
-            }
-        except Exception as e:
-            result["statistics_error"] = str(e)
+    
+    _add_series_memory_usage(series, config, result)
+    _add_series_value_analysis(series, config, result)
+    _serialize_series_content(series, config, result)
+    _add_series_statistics(series, config, result)
 
     return result
 

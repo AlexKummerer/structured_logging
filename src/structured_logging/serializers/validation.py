@@ -474,48 +474,55 @@ class StructuredDataValidator:
         Returns:
             Wrapped logger with validation
         """
-
-        class ValidatedLogger:
-            def __init__(self, base_logger, validator, schema, strict):
-                self._logger = base_logger
-                self._validator = validator
-                self._schema = schema
-                self._strict = strict
-
-            def _log_with_validation(self, level: str, message: str, **kwargs):
-                # Validate kwargs against schema
-                try:
-                    if not self._validator.validate(kwargs, self._schema, self._strict):
-                        if not self._strict:
-                            # Log warning about validation failure
-                            self._logger.warning(
-                                f"Log data validation failed for schema {self._schema}"
-                            )
-                except ValidationError as e:
-                    if self._strict:
-                        raise
-                    self._logger.error(f"Log validation error: {e}")
-                    return
-
-                # Log with validated data
-                getattr(self._logger, level)(message, **kwargs)
-
-            def debug(self, message: str, **kwargs):
-                self._log_with_validation("debug", message, **kwargs)
-
-            def info(self, message: str, **kwargs):
-                self._log_with_validation("info", message, **kwargs)
-
-            def warning(self, message: str, **kwargs):
-                self._log_with_validation("warning", message, **kwargs)
-
-            def error(self, message: str, **kwargs):
-                self._log_with_validation("error", message, **kwargs)
-
-            def critical(self, message: str, **kwargs):
-                self._log_with_validation("critical", message, **kwargs)
-
         return ValidatedLogger(logger, self.schema_validator, schema_name, strict)
+
+
+class ValidatedLogger:
+    """Logger wrapper that validates log data against a schema"""
+    
+    def __init__(self, base_logger, validator, schema, strict):
+        self._logger = base_logger
+        self._validator = validator
+        self._schema = schema
+        self._strict = strict
+
+    def _handle_validation_failure(self, error: Optional[ValidationError] = None) -> bool:
+        """Handle validation failure based on strict mode"""
+        if error and self._strict:
+            raise error
+        elif error:
+            self._logger.error(f"Log validation error: {error}")
+            return False
+        elif not self._strict:
+            self._logger.warning(f"Log data validation failed for schema {self._schema}")
+        return not self._strict
+
+    def _log_with_validation(self, level: str, message: str, **kwargs):
+        """Log with validation"""
+        try:
+            if not self._validator.validate(kwargs, self._schema, self._strict):
+                if not self._handle_validation_failure():
+                    return
+        except ValidationError as e:
+            if not self._handle_validation_failure(e):
+                return
+
+        getattr(self._logger, level)(message, **kwargs)
+
+    def debug(self, message: str, **kwargs):
+        self._log_with_validation("debug", message, **kwargs)
+
+    def info(self, message: str, **kwargs):
+        self._log_with_validation("info", message, **kwargs)
+
+    def warning(self, message: str, **kwargs):
+        self._log_with_validation("warning", message, **kwargs)
+
+    def error(self, message: str, **kwargs):
+        self._log_with_validation("error", message, **kwargs)
+
+    def critical(self, message: str, **kwargs):
+        self._log_with_validation("critical", message, **kwargs)
 
 
 # Global instances
