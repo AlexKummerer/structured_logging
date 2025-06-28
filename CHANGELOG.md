@@ -5,13 +5,24 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.7.0] - In Development
 
-### Planned for 0.7.0
-- **Cloud Platform Integration**: AWS CloudWatch, Google Cloud Logging, Azure Monitor
-- **Enhanced Framework Integration**: Django, aiohttp, Celery, SQLAlchemy
-- **Advanced Analytics**: Pattern detection, anomaly identification, performance metrics
-- **OpenTelemetry Integration**: Distributed tracing support
+### Added - Cloud Platform Integration
+- **AWS CloudWatch**: Native integration with automatic batching, compression, and retry logic
+- **Google Cloud Logging**: Stackdriver integration with resource types and structured logging
+- **Azure Monitor**: Log Analytics, Application Insights, and DCE integration with managed identity
+- **OpenTelemetry Integration**: Distributed tracing with automatic context propagation
+
+### Added - Framework Integrations
+- **Django Integration**: Middleware with request/response logging, database query tracking, and signal integration
+- **aiohttp Integration**: Async middleware with WebSocket support and client request logging
+- **Celery Integration**: Task execution logging with retry tracking, worker events, and correlation ID propagation
+- **SQLAlchemy Integration**: Query execution logging with timing, slow query detection, connection pool monitoring, and ORM event tracking
+
+### Added - Advanced Analytics
+- **Pattern Detection**: Automatic discovery of common patterns including error patterns, sequential operations, field value patterns, and frequency-based patterns
+- **Anomaly Detection**: Multi-method anomaly detection using statistical analysis, pattern deviation, frequency anomalies, and value anomalies
+- **Performance Metrics Collection**: Comprehensive metrics including latency analysis, error rates, throughput metrics, and user activity tracking
 
 ## [0.6.1] - 2025-06-28
 

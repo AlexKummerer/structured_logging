@@ -109,6 +109,50 @@ try:
     _GCP_AVAILABLE = True
 except ImportError:
     _GCP_AVAILABLE = False
+
+# Import Azure handlers if available
+try:
+    from .cloud import (
+        AzureMonitorConfig,
+        AzureMonitorHandler,
+        ApplicationInsightsConfig,
+        ApplicationInsightsHandler,
+    )
+    _AZURE_AVAILABLE = True
+except ImportError:
+    _AZURE_AVAILABLE = False
+
+# Import analytics if available
+try:
+    from .analytics import (
+        # Pattern detection
+        PatternDetector,
+        PatternDetectorConfig,
+        LogPattern,
+        PatternMatch,
+        detect_patterns,
+        create_pattern_detector,
+        # Anomaly detection
+        AnomalyDetector,
+        AnomalyDetectorConfig,
+        LogAnomaly,
+        AnomalyScore,
+        detect_anomalies,
+        create_anomaly_detector,
+        # Metrics collection
+        MetricsCollector,
+        MetricsConfig,
+        PerformanceMetrics,
+        ErrorMetrics,
+        ThroughputMetrics,
+        UserMetrics,
+        MetricsSummary,
+        collect_metrics,
+        create_metrics_collector,
+    )
+    _ANALYTICS_AVAILABLE = True
+except ImportError:
+    _ANALYTICS_AVAILABLE = False
 from .serializers import (
     EnhancedJSONEncoder,
     LazyDict,
@@ -248,4 +292,40 @@ if _GCP_AVAILABLE:
         "GoogleCloudHandler", 
         "StackdriverConfig",
         "StackdriverHandler",
+    ])
+
+if _AZURE_AVAILABLE:
+    __all__.extend([
+        "AzureMonitorConfig",
+        "AzureMonitorHandler",
+        "ApplicationInsightsConfig",
+        "ApplicationInsightsHandler",
+    ])
+
+if _ANALYTICS_AVAILABLE:
+    __all__.extend([
+        # Pattern detection
+        "PatternDetector",
+        "PatternDetectorConfig",
+        "LogPattern",
+        "PatternMatch",
+        "detect_patterns",
+        "create_pattern_detector",
+        # Anomaly detection
+        "AnomalyDetector",
+        "AnomalyDetectorConfig",
+        "LogAnomaly",
+        "AnomalyScore",
+        "detect_anomalies",
+        "create_anomaly_detector",
+        # Metrics collection
+        "MetricsCollector",
+        "MetricsConfig",
+        "PerformanceMetrics",
+        "ErrorMetrics",
+        "ThroughputMetrics",
+        "UserMetrics",
+        "MetricsSummary",
+        "collect_metrics",
+        "create_metrics_collector",
     ])
