@@ -4,7 +4,7 @@ Structured Logging Library
 A flexible Python library for structured JSON logging with context management and async support.
 """
 
-__version__ = "0.7.0"
+__version__ = "0.8.0"
 
 # Async logging support
 from .async_config import (
@@ -328,4 +328,149 @@ if _ANALYTICS_AVAILABLE:
         "MetricsSummary",
         "collect_metrics",
         "create_metrics_collector",
+    ])
+
+# Import streaming if available
+try:
+    from .streaming import (
+        LogStreamProcessor,
+        ProcessorConfig,
+        create_stream_processor,
+        # Sources
+        LogFileSource,
+        MemorySource,
+        WebSocketSource,
+        # Operations
+        TumblingWindow,
+        SlidingWindow,
+        SessionWindow,
+        # Sinks
+        ConsoleSink,
+        MetricsSink,
+        WebSocketSink,
+        StorageSink,
+    )
+    _STREAMING_AVAILABLE = True
+except ImportError:
+    _STREAMING_AVAILABLE = False
+
+# Import monitoring if available
+try:
+    from .monitoring import (
+        AlertLevel,
+        AlertManager,
+        AlertRule,
+        create_alert_rule,
+        DashboardConfig,
+        DashboardServer,
+        create_dashboard,
+        MetricsAggregator,
+        MetricsSnapshot,
+        TimeSeriesMetric,
+        LogChart,
+        MetricChart,
+        ErrorHeatmap,
+        create_visualization,
+    )
+    _MONITORING_AVAILABLE = True
+except ImportError:
+    _MONITORING_AVAILABLE = False
+
+# Import ML if available
+try:
+    from .ml import (
+        # ML Anomaly Detection
+        AnomalyDetectorML,
+        IsolationForestDetector,
+        AutoencoderDetector,
+        StatisticalDetector,
+        AnomalyConfig as MLAnomalyConfig,
+        create_anomaly_detector as create_ml_anomaly_detector,
+        # Classification & Clustering
+        LogClassifier,
+        LogClusterer,
+        ClassificationConfig,
+        create_classifier,
+        create_clusterer,
+        # Prediction
+        ErrorPredictor,
+        PerformancePredictor,
+        PredictionConfig,
+        create_predictor,
+        # Feature Engineering
+        FeatureExtractor,
+        LogVectorizer,
+        TimeSeriesFeatures,
+        extract_features,
+    )
+    _ML_AVAILABLE = True
+except ImportError:
+    _ML_AVAILABLE = False
+
+# Add streaming exports if available
+if _STREAMING_AVAILABLE:
+    __all__.extend([
+        "LogStreamProcessor",
+        "ProcessorConfig",
+        "create_stream_processor",
+        # Sources
+        "LogFileSource",
+        "MemorySource",
+        "WebSocketSource",
+        # Operations
+        "TumblingWindow",
+        "SlidingWindow",
+        "SessionWindow",
+        # Sinks
+        "ConsoleSink",
+        "MetricsSink",
+        "WebSocketSink",
+        "StorageSink",
+    ])
+
+# Add monitoring exports if available
+if _MONITORING_AVAILABLE:
+    __all__.extend([
+        "AlertLevel",
+        "AlertManager",
+        "AlertRule",
+        "create_alert_rule",
+        "DashboardConfig",
+        "DashboardServer",
+        "create_dashboard",
+        "MetricsAggregator",
+        "MetricsSnapshot",
+        "TimeSeriesMetric",
+        "LogChart",
+        "MetricChart",
+        "ErrorHeatmap",
+        "create_visualization",
+    ])
+
+# Add ML exports if available
+if _ML_AVAILABLE:
+    __all__.extend([
+        # ML Anomaly Detection
+        "AnomalyDetectorML",
+        "IsolationForestDetector",
+        "AutoencoderDetector",
+        "StatisticalDetector",
+        "MLAnomalyConfig",
+        "create_ml_anomaly_detector",
+        # Classification & Clustering
+        "LogClassifier",
+        "LogClusterer",
+        "ClassificationConfig",
+        "create_classifier",
+        "create_clusterer",
+        # Prediction
+        "ErrorPredictor",
+        "PerformancePredictor",
+        "PredictionConfig",
+        "create_predictor",
+        # Feature Engineering
+        "FeatureExtractor",
+        "LogVectorizer",
+        "TimeSeriesFeatures",
+        "extract_features",
     ])
