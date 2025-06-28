@@ -110,6 +110,50 @@ class SyslogHandler(BaseNetworkHandler):
         # BOM + message
         return f"{header} \ufeff{message}"
 
+    def _create_ssl_context(self) -> ssl.SSLContext:
+        """Create SSL context for secure connections"""
+        context = ssl.create_default_context()
+        if not self.syslog_config.verify_ssl:
+            context.check_hostname = False
+            context.verify_mode = ssl.CERT_NONE
+        return context
+
+    def _create_socket(self) -> socket.socket:
+        """Create and configure socket based on settings"""
+        if self.syslog_config.use_ssl:
+            context = self._create_ssl_context()
+            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            sock = context.wrap_socket(sock, server_hostname=self.config.host)
+        else:
+            sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        
+        sock.settimeout(self.config.timeout)
+        
+        if sock.type == socket.SOCK_STREAM:  # TCP
+            sock.connect((self.config.host, self.config.port))
+        
+        return sock
+
+    def _format_syslog_message(self, record: Any, message: str) -> str:
+        """Format message according to configured RFC"""
+        if self.syslog_config.rfc_format == "5424":
+            return self._format_rfc5424(record, message)
+        else:
+            return self._format_rfc3164(record, message)
+
+    def _send_single_message(self, sock: socket.socket, msg_info: Dict[str, Any]) -> None:
+        """Send a single message through the socket"""
+        record = msg_info["record"]
+        message = msg_info["message"]
+        
+        syslog_message = self._format_syslog_message(record, message)
+        data = syslog_message.encode("utf-8")
+        
+        if sock.type == socket.SOCK_STREAM:  # TCP
+            sock.sendall(data + b"\n")
+        else:  # UDP
+            sock.sendto(data, (self.config.host, self.config.port))
+
     def _send_batch(self, messages: List[Dict[str, Any]]) -> None:
         """Send batch of syslog messages"""
         if not messages:
@@ -118,42 +162,9 @@ class SyslogHandler(BaseNetworkHandler):
         def send_messages():
             sock = None
             try:
-                # Create socket
-                if self.syslog_config.use_ssl:
-                    context = ssl.create_default_context()
-                    if not self.syslog_config.verify_ssl:
-                        context.check_hostname = False
-                        context.verify_mode = ssl.CERT_NONE
-
-                    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-                    sock = context.wrap_socket(sock, server_hostname=self.config.host)
-                else:
-                    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-
-                sock.settimeout(self.config.timeout)
-
-                if sock.type == socket.SOCK_STREAM:  # TCP
-                    sock.connect((self.config.host, self.config.port))
-
-                # Send each message
+                sock = self._create_socket()
                 for msg_info in messages:
-                    record = msg_info["record"]
-                    message = msg_info["message"]
-
-                    # Format according to RFC
-                    if self.syslog_config.rfc_format == "5424":
-                        syslog_message = self._format_rfc5424(record, message)
-                    else:
-                        syslog_message = self._format_rfc3164(record, message)
-
-                    # Encode and send
-                    data = syslog_message.encode("utf-8")
-
-                    if sock.type == socket.SOCK_STREAM:  # TCP
-                        sock.sendall(data + b"\n")
-                    else:  # UDP
-                        sock.sendto(data, (self.config.host, self.config.port))
-
+                    self._send_single_message(sock, msg_info)
             finally:
                 if sock:
                     sock.close()
