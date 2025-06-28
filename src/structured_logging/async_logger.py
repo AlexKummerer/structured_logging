@@ -163,55 +163,60 @@ class AsyncLogProcessor:
                 self.async_config.error_callback(e)
             return False
 
+    def _should_flush_batch(self) -> bool:
+        """Check if batch should be flushed"""
+        return (
+            len(self.batch) >= self.async_config.batch_size
+            or time.time() - self.last_flush_time >= self.async_config.flush_interval
+        )
+
+    async def _process_queue_entry(self) -> bool:
+        """Process a single queue entry, return True if entry was processed"""
+        try:
+            entry = await asyncio.wait_for(
+                self.queue.get(), timeout=0.1
+            )
+            self.batch.append(entry)
+            
+            if self._should_flush_batch():
+                await self._flush_batch()
+            
+            self.queue.task_done()
+            return True
+        except asyncio.TimeoutError:
+            return False
+
+    async def _handle_timeout_flush(self) -> None:
+        """Handle flush on timeout"""
+        if self.batch and self._should_flush_batch():
+            await self._flush_batch()
+
+    async def _handle_worker_error(self, e: Exception) -> None:
+        """Handle worker errors"""
+        self._stats["errors"] += 1
+        if self.async_config.error_callback:
+            self.async_config.error_callback(e)
+
+    async def _handle_cancellation(self) -> None:
+        """Handle worker cancellation"""
+        if self.batch:
+            try:
+                await self._flush_batch()
+            except Exception as e:
+                if self.async_config.error_callback:
+                    self.async_config.error_callback(e)
+
     async def _worker(self, worker_name: str) -> None:
         """Worker task that processes log entries"""
         try:
             while self.running:
                 try:
-                    # Get log entry from queue
-                    entry = await asyncio.wait_for(
-                        self.queue.get(),
-                        timeout=0.1,  # Short timeout to check running status
-                    )
-
-                    # Add to batch
-                    self.batch.append(entry)
-
-                    # Check if we should flush
-                    should_flush = (
-                        len(self.batch) >= self.async_config.batch_size
-                        or time.time() - self.last_flush_time
-                        >= self.async_config.flush_interval
-                    )
-
-                    if should_flush:
-                        await self._flush_batch()
-
-                    # Mark task as done
-                    self.queue.task_done()
-
-                except asyncio.TimeoutError:
-                    # Check if we should flush based on time
-                    if (
-                        self.batch
-                        and time.time() - self.last_flush_time
-                        >= self.async_config.flush_interval
-                    ):
-                        await self._flush_batch()
-
+                    if not await self._process_queue_entry():
+                        await self._handle_timeout_flush()
                 except Exception as e:
-                    self._stats["errors"] += 1
-                    if self.async_config.error_callback:
-                        self.async_config.error_callback(e)
-
+                    await self._handle_worker_error(e)
         except asyncio.CancelledError:
-            # Worker was cancelled, flush remaining logs
-            if self.batch:
-                try:
-                    await self._flush_batch()
-                except Exception as e:
-                    if self.async_config.error_callback:
-                        self.async_config.error_callback(e)
+            await self._handle_cancellation()
             raise
 
     async def _flush_timer(self) -> None:
