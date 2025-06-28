@@ -208,9 +208,47 @@ def serialize_pandas_timestamp(ts: Any, config: SerializationConfig) -> Any:
     return result
 
 
-def serialize_pandas_categorical(
-    categorical: Any, config: SerializationConfig
-) -> Dict[str, Any]:
+def _add_categorical_value_counts(categorical: Any, result: Dict[str, Any]) -> None:
+    """Add value counts to categorical result"""
+    try:
+        value_counts = categorical.value_counts()
+        result["value_counts"] = {
+            str(cat): int(count) for cat, count in value_counts.items()
+        }
+    except Exception as e:
+        result["value_counts_error"] = str(e)
+
+
+def _serialize_small_categorical(categorical: Any, config: SerializationConfig, result: Dict[str, Any]) -> None:
+    """Serialize small categorical data"""
+    if config.pandas_categorical_as_codes:
+        result["data"] = categorical.codes.tolist()
+        result["data_type"] = "codes"
+    else:
+        result["data"] = categorical.astype(str).tolist()
+        result["data_type"] = "values"
+
+
+def _serialize_large_categorical(categorical: Any, config: SerializationConfig, result: Dict[str, Any]) -> None:
+    """Serialize large categorical data with sampling"""
+    head_size = min(config.pandas_max_rows // 2, len(categorical))
+    tail_size = min(config.pandas_max_rows - head_size, len(categorical))
+
+    if config.pandas_categorical_as_codes:
+        result["sample"] = {
+            "head": categorical.codes[:head_size].tolist(),
+            "tail": categorical.codes[-tail_size:].tolist(),
+            "data_type": "codes",
+        }
+    else:
+        result["sample"] = {
+            "head": categorical[:head_size].astype(str).tolist(),
+            "tail": categorical[-tail_size:].astype(str).tolist(),
+            "data_type": "values",
+        }
+
+
+def serialize_pandas_categorical(categorical: Any, config: SerializationConfig) -> Dict[str, Any]:
     """Serialize Pandas Categorical data"""
     if not HAS_PANDAS:
         return {"error": "Pandas not available"}
@@ -222,41 +260,13 @@ def serialize_pandas_categorical(
         "num_categories": len(categorical.categories),
         "__pandas_type__": "Categorical",
     }
-
-    # Value counts
-    try:
-        value_counts = categorical.value_counts()
-        result["value_counts"] = {
-            str(cat): int(count) for cat, count in value_counts.items()
-        }
-    except Exception as e:
-        result["value_counts_error"] = str(e)
-
-    # Data serialization
+    
+    _add_categorical_value_counts(categorical, result)
+    
     if len(categorical) <= config.pandas_max_rows:
-        if config.pandas_categorical_as_codes:
-            result["data"] = categorical.codes.tolist()
-            result["data_type"] = "codes"
-        else:
-            result["data"] = categorical.astype(str).tolist()
-            result["data_type"] = "values"
+        _serialize_small_categorical(categorical, config, result)
     else:
-        # Large categorical: sample
-        head_size = min(config.pandas_max_rows // 2, len(categorical))
-        tail_size = min(config.pandas_max_rows - head_size, len(categorical))
-
-        if config.pandas_categorical_as_codes:
-            result["sample"] = {
-                "head": categorical.codes[:head_size].tolist(),
-                "tail": categorical.codes[-tail_size:].tolist(),
-                "data_type": "codes",
-            }
-        else:
-            result["sample"] = {
-                "head": categorical[:head_size].astype(str).tolist(),
-                "tail": categorical[-tail_size:].astype(str).tolist(),
-                "data_type": "values",
-            }
+        _serialize_large_categorical(categorical, config, result)
 
     return result
 
